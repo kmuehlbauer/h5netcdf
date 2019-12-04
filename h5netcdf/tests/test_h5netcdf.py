@@ -521,8 +521,7 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
         # labeled dimensions but no dimension scales
         f['foo'].dims[0].label = 'x'
     with h5netcdf.File(tmp_local_or_remote_netcdf, 'r') as ds:
-        with raises(ValueError):
-            ds.variables['foo'].dimensions
+        assert ds.variables['foo'].dimensions[0] == 'phony_dim_0'
 
 
 def test_hierarchical_access_auto_create(tmp_local_or_remote_netcdf):
