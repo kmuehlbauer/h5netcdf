@@ -96,15 +96,14 @@ class BaseVariable(object):
 
         dims = []
         for axis, dim in enumerate(self._h5ds.dims):
-            # TODO: read dimension labels even if there is no associated
-            # scale? it's not netCDF4 spec, but it is unambiguous...
-            # Also: the netCDF lib can read HDF5 datasets with unlabeled
-            # dimensions.
+            # TODO: replicate netcdf style invention of phony_dims
+            #  where the dim count is per file not per dataset
+            # create phony_dim_0, phony_dim_1 ... phony_dim_N
+            # if unlabeled dimensions are found
             if len(dim) == 0:
-                raise ValueError('variable %r has no dimension scale '
-                                 'associated with axis %s'
-                                 % (self.name, axis))
-            name = _name_from_dimension(dim)
+                name = 'phony_dim_{}'.format(axis)
+            else:
+                name = _name_from_dimension(dim)
             dims.append(name)
         return tuple(dims)
 
