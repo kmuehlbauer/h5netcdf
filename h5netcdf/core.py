@@ -96,12 +96,12 @@ class BaseVariable(object):
 
         dims = []
         for axis, dim in enumerate(self._h5ds.dims):
-            # TODO: replicate netcdf style invention of phony_dims
-            #  where the dim count is per file not per dataset
-            # create phony_dim_0, phony_dim_1 ... phony_dim_N
             # if unlabeled dimensions are found
+            # create phony dimensions as they are encountered
             if len(dim) == 0:
-                name = 'phony_dim_{}'.format(axis)
+                name = 'phony_dim_{}'.format(self._root._unlabeled_dim_count)
+                self._root._unlabeled_dim_count += 1
+                self._parent._create_dimension(name, self.shape[axis])
             else:
                 name = _name_from_dimension(dim)
             dims.append(name)
@@ -621,6 +621,7 @@ class File(Group):
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
+        self._unlabeled_dim_count = 0
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
