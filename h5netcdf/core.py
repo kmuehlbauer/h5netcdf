@@ -111,8 +111,7 @@ class BaseVariable(object):
                     name = parent_dim_order[idx]
                 # create new phony dimension if new dimension size detected
                 else:
-                    name = 'phony_dim_{}'.format(self._root._unlabeled_dim_count)
-                    self._root._unlabeled_dim_count += 1
+                    name = 'phony_dim_{}'.format(self._parent._unlabeled_id + axis)
                     self._parent._create_dimension(name, dimsize)
             else:
                 name = _name_from_dimension(dim)
@@ -640,8 +639,20 @@ class File(Group):
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
-
         super(File, self).__init__(self, self._h5path)
+        self._determine_unlabeled_dimensions()
+
+    def _determine_unlabeled_dimensions(self):
+        def get_unlabeled_dimension_count(self, out=0):
+            ndim = [self.variables[name].ndim for name in self.variables]
+            if ndim:
+                ndim = max(ndim)
+                self._unlabeled_id = out
+                out += ndim
+            for name in self.groups:
+                out = get_unlabeled_dimension_count(self[name], out)
+            return out
+        self._unlabeled_dim_count = get_unlabeled_dimension_count(self)
 
     def _check_valid_netcdf_dtype(self, dtype, stacklevel=3):
         dtype = np.dtype(dtype)
