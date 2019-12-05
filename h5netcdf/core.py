@@ -99,9 +99,21 @@ class BaseVariable(object):
             # if unlabeled dimensions are found
             # create phony dimensions as they are encountered
             if len(dim) == 0:
-                name = 'phony_dim_{}'.format(self._root._unlabeled_dim_count)
-                self._root._unlabeled_dim_count += 1
-                self._parent._create_dimension(name, self.shape[axis])
+                parent_dim_order = list(self._parent._dim_order.keys())
+                parent_dim_sizes = list(self._parent._dim_sizes.values())
+                # check if dimsize is already in parent dims
+                dimsize = self.shape[axis]
+                if dimsize in parent_dim_sizes:
+                    # this takes the dimension which is first
+                    # (if equal dimension sizes) which is in line with netcdf
+                    # see https://github.com/Unidata/netcdf-c/issues/1484
+                    idx = parent_dim_sizes.index(dimsize)
+                    name = parent_dim_order[idx]
+                # create new phony dimension if new dimension size detected
+                else:
+                    name = 'phony_dim_{}'.format(self._root._unlabeled_dim_count)
+                    self._root._unlabeled_dim_count += 1
+                    self._parent._create_dimension(name, dimsize)
             else:
                 name = _name_from_dimension(dim)
             dims.append(name)
