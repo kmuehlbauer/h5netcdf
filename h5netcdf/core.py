@@ -103,27 +103,36 @@ class BaseVariable(object):
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
-                parent_dim_sizes = [size for name, size in
-                                    self._parent._current_dim_sizes.items() if 'phony_dim' in name]
+                parent_dim_names = [name for name in
+                                    self._parent._dim_order.keys() if 'phony_dim' in name]
+                parent_dim_sizes = [self._parent._current_dim_sizes[name] for name in parent_dim_names]
                 # get current dimension
                 dimsize = self.shape[axis]
                 # check if all dimensions are in place
                 same_dim_count = list(self.shape).count(dimsize)
                 parent_same_dim_count = parent_dim_sizes.count(dimsize)
+                print("select::", self.name, self.shape, same_dim_count, parent_same_dim_count)
+                #unscaled_dims.append(dimsize)
                 # check if dimsize is already in parent dims
-                if dimsize in parent_dim_sizes and (same_dim_count <= parent_same_dim_count):
+                if dimsize in parent_dim_sizes and (same_dim_count < parent_same_dim_count):
                     # this takes the dimension which is first
                     # (if equal dimension sizes) which is in line with netcdf
                     # see https://github.com/Unidata/netcdf-c/issues/1484
-                    parent_dim_names = [name for name in
-                                              self._parent._current_dim_sizes.keys()
-                                              if 'phony_dim' in name]
+                    #parent_dim_names = [name for name in
+                    #                          self._parent._current_dim_sizes.keys()
+                    #                          if 'phony_dim' in name]
                     idx1 = [i for i, val in enumerate(parent_dim_sizes) if val == dimsize]
-                    idx1 = idx1[unscaled_dims.count(dimsize)]
+                    print("found:", self.name)
+                    print(dimsize)
+                    print(parent_dim_names)
+                    print(parent_dim_sizes)
+                    print("IDX:", idx1, unscaled_dims.count(dimsize))
+                    idx1 = idx1[unscaled_dims.count(dimsize)-1]
                     name = parent_dim_names[idx1]
                 # create new phony dimension if new dimension detected
                 else:
                     name = 'phony_dim_{}'.format(self._parent._unscaled_dim_id)
+                    print("added:", self.name, dimsize)
                     self._parent._unscaled_dim_id += 1
                     self._parent._create_dimension(name, dimsize)
                 unscaled_dims.append(dimsize)

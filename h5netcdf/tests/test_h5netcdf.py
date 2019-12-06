@@ -530,7 +530,14 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
         f.create_dataset('y1', data=np.arange(5))
         f.create_dataset('z1', data=np.arange(5))
 
+        f['foo1'].dims.create_scale(f['x'])
+        f['foo1'].dims.create_scale(f['y'])
+        f['foo1'].dims[0].attach_scale(f['x'])
+        f['foo1'].dims[1].attach_scale(f['y'])
+
+
     with h5netcdf.File(tmp_local_or_remote_netcdf, 'r') as ds:
+        print(ds)
         assert ds.variables['foo1'].dimensions[0] == 'phony_dim_0'
         assert ds.variables['foo1'].dimensions[1] == 'phony_dim_1'
         assert ds.variables['foo1'].dimensions[2] == 'phony_dim_2'
