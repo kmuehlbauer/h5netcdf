@@ -103,21 +103,21 @@ class BaseVariable(object):
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
-                parent_phony_dim_sizes = [size for name, size in
+                parent_dim_sizes = [size for name, size in
                                     self._parent._current_dim_sizes.items() if 'phony_dim' in name]
-                parent_dim_sizes = list(self._parent._current_dim_sizes.values())
-
                 # get current dimension
                 dimsize = self.shape[axis]
                 # check if all dimensions are in place
                 same_dim_count = list(self.shape).count(dimsize)
-                parent_same_dim_count = parent_phony_dim_sizes.count(dimsize)
+                parent_same_dim_count = parent_dim_sizes.count(dimsize)
                 # check if dimsize is already in parent dims
                 if dimsize in parent_dim_sizes and (same_dim_count <= parent_same_dim_count):
                     # this takes the dimension which is first
                     # (if equal dimension sizes) which is in line with netcdf
                     # see https://github.com/Unidata/netcdf-c/issues/1484
-                    parent_dim_names = list(self._parent._dim_sizes.keys())
+                    parent_dim_names = [name for name in
+                                              self._parent._current_dim_sizes.keys()
+                                              if 'phony_dim' in name]
                     idx1 = [i for i, val in enumerate(parent_dim_sizes) if val == dimsize]
                     idx1 = idx1[unscaled_dims.count(dimsize)]
                     name = parent_dim_names[idx1]
