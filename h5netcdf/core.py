@@ -105,8 +105,8 @@ class BaseVariable(object):
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
                 first_dim_id = self._parent._first_unscaled_dim_id
-                parent_dim_names = self._parent._dim_sizes.keys()
-                parent_dim_sizes = self._parent._current_dim_sizes.values()
+                parent_dim_names = list(self._parent._dim_sizes.keys())
+                parent_dim_sizes = list(self._parent._current_dim_sizes.values())
                 # check if dimsize is already in parent dims
                 dimsize = self.shape[axis]
                 if dimsize in parent_dim_sizes:
