@@ -95,12 +95,18 @@ class BaseVariable(object):
             return (child_name,)
 
         dims = []
+        # safe original state
+        num_scaled_dims = len(self._parent.dimensions)
         for axis, dim in enumerate(self._h5ds.dims):
             # if unlabeled dimensions are found
             # create phony dimensions as they are encountered
             if len(dim) == 0:
-                parent_dim_order = list(self._parent._dim_order.keys())
-                parent_dim_sizes = list(self._parent._dim_sizes.values())
+                # check on first occasion
+                if not self._root._unscaled_dim_count:
+                    self._root._determine_unscaled_dimensions()
+                first_dim_id = self._parent._first_unscaled_dim_id
+                parent_dim_names = self._parent._dim_sizes.keys()
+                parent_dim_sizes = self._parent._current_dim_sizes.values()
                 # check if dimsize is already in parent dims
                 dimsize = self.shape[axis]
                 if dimsize in parent_dim_sizes:
@@ -108,10 +114,11 @@ class BaseVariable(object):
                     # (if equal dimension sizes) which is in line with netcdf
                     # see https://github.com/Unidata/netcdf-c/issues/1484
                     idx = parent_dim_sizes.index(dimsize)
-                    name = parent_dim_order[idx]
+                    name = parent_dim_names[idx]
                 # create new phony dimension if new dimension size detected
                 else:
-                    name = 'phony_dim_{}'.format(self._parent._unlabeled_id + axis)
+                    phony_id = first_dim_id + axis - num_scaled_dims
+                    name = 'phony_dim_{}'.format(phony_id)
                     self._parent._create_dimension(name, dimsize)
             else:
                 name = _name_from_dimension(dim)
@@ -233,6 +240,7 @@ class Group(Mapping):
         self._parent = parent
         self._root = parent._root
         self._h5path = _join_h5paths(parent.name, name)
+        self._first_unscaled_dim_id = None
 
         if parent is not self:
             self._dim_sizes = parent._dim_sizes.new_child()
@@ -634,25 +642,25 @@ class File(Group):
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
-        self._unlabeled_dim_count = 0
+        self._unscaled_dim_count = 0
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
         super(File, self).__init__(self, self._h5path)
-        self._determine_unlabeled_dimensions()
 
-    def _determine_unlabeled_dimensions(self):
-        def get_unlabeled_dimension_count(self, out=0):
+    def _determine_unscaled_dimensions(self):
+        def get_unscaled_dimension_count(self, out=0):
             ndim = [self.variables[name].ndim for name in self.variables]
             if ndim:
                 ndim = max(ndim)
-                self._unlabeled_id = out
-                out += ndim
+                unscaled_dims = ndim - len(self._dim_sizes)
+                self._first_unscaled_dim_id = out
+                out += unscaled_dims
             for name in self.groups:
-                out = get_unlabeled_dimension_count(self[name], out)
+                out = get_unscaled_dimension_count(self[name], out)
             return out
-        self._unlabeled_dim_count = get_unlabeled_dimension_count(self)
+        self._unscaled_dim_count = get_unscaled_dimension_count(self)
 
     def _check_valid_netcdf_dtype(self, dtype, stacklevel=3):
         dtype = np.dtype(dtype)
