@@ -95,8 +95,7 @@ class BaseVariable(object):
             return (child_name,)
 
         dims = []
-        # safe original state
-        num_scaled_dims = len(self._parent.dimensions)
+        unscaled_dims = []
         for axis, dim in enumerate(self._h5ds.dims):
             # if unlabeled dimensions are found
             # create phony dimensions as they are encountered
@@ -104,22 +103,30 @@ class BaseVariable(object):
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
-                first_dim_id = self._parent._first_unscaled_dim_id
-                parent_dim_names = list(self._parent._dim_sizes.keys())
+                parent_phony_dim_sizes = [size for name, size in
+                                    self._parent._current_dim_sizes.items() if 'phony_dim' in name]
                 parent_dim_sizes = list(self._parent._current_dim_sizes.values())
-                # check if dimsize is already in parent dims
+
+                # get current dimension
                 dimsize = self.shape[axis]
-                if dimsize in parent_dim_sizes:
+                # check if all dimensions are in place
+                same_dim_count = list(self.shape).count(dimsize)
+                parent_same_dim_count = parent_phony_dim_sizes.count(dimsize)
+                # check if dimsize is already in parent dims
+                if dimsize in parent_dim_sizes and (same_dim_count <= parent_same_dim_count):
                     # this takes the dimension which is first
                     # (if equal dimension sizes) which is in line with netcdf
                     # see https://github.com/Unidata/netcdf-c/issues/1484
-                    idx = parent_dim_sizes.index(dimsize)
-                    name = parent_dim_names[idx]
-                # create new phony dimension if new dimension size detected
+                    parent_dim_names = list(self._parent._dim_sizes.keys())
+                    idx1 = [i for i, val in enumerate(parent_dim_sizes) if val == dimsize]
+                    idx1 = idx1[unscaled_dims.count(dimsize)]
+                    name = parent_dim_names[idx1]
+                # create new phony dimension if new dimension detected
                 else:
-                    phony_id = first_dim_id + axis - num_scaled_dims
-                    name = 'phony_dim_{}'.format(phony_id)
+                    name = 'phony_dim_{}'.format(self._parent._unscaled_dim_id)
+                    self._parent._unscaled_dim_id += 1
                     self._parent._create_dimension(name, dimsize)
+                unscaled_dims.append(dimsize)
             else:
                 name = _name_from_dimension(dim)
             dims.append(name)
@@ -240,7 +247,7 @@ class Group(Mapping):
         self._parent = parent
         self._root = parent._root
         self._h5path = _join_h5paths(parent.name, name)
-        self._first_unscaled_dim_id = None
+        self._unscaled_dim_id = None
 
         if parent is not self:
             self._dim_sizes = parent._dim_sizes.new_child()
@@ -651,11 +658,14 @@ class File(Group):
 
     def _determine_unscaled_dimensions(self):
         def get_unscaled_dimension_count(self, out=0):
-            ndim = [self.variables[name].ndim for name in self.variables]
+            dims = []
+            [dims.append(vd) for name in self.variables
+             for vd in list(self.variables[name].shape)
+             if list(self.variables[name].shape).count(vd) > dims.count(vd)]
+            ndim = len(dims)
             if ndim:
-                ndim = max(ndim)
                 unscaled_dims = ndim - len(self._dim_sizes)
-                self._first_unscaled_dim_id = out
+                self._unscaled_dim_id = out
                 out += unscaled_dims
             for name in self.groups:
                 out = get_unscaled_dimension_count(self[name], out)
