@@ -102,7 +102,7 @@ class BaseVariable(object):
             # create phony dimensions as they are encountered
             if len(dim) == 0:
                 # check on first occasion
-                if not self._root._unscaled_dim_count:
+                if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
                 first_dim_id = self._parent._first_unscaled_dim_id
                 parent_dim_names = self._parent._dim_sizes.keys()
@@ -642,7 +642,7 @@ class File(Group):
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
-        self._unscaled_dim_count = 0
+        self._unscaled_dim_count = None
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
