@@ -95,7 +95,7 @@ class BaseVariable(object):
             return (child_name,)
 
         dims = []
-        unscaled_dims = []
+        var_phony_dims = []
         for axis, dim in enumerate(self._h5ds.dims):
             # if unlabeled dimensions are found
             # create phony dimensions as they are encountered
@@ -103,30 +103,35 @@ class BaseVariable(object):
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
-                parent_dim_sizes = [size for name, size in
-                                    self._parent._current_dim_sizes.items() if 'phony_dim' in name]
+
+                phony_dim_names = [name for name in
+                                   self._parent._dim_order.keys() if
+                                   'phony_dim' in name]
+                phony_dim_sizes = [self._parent._current_dim_sizes[name]
+                                   for name in phony_dim_names]
+
                 # get current dimension
                 dimsize = self.shape[axis]
+                # get already processed phony dims
+                var_dim_count = var_phony_dims.count(dimsize)
                 # check if all dimensions are in place
-                same_dim_count = list(self.shape).count(dimsize)
-                parent_same_dim_count = parent_dim_sizes.count(dimsize)
-                # check if dimsize is already in parent dims
-                if dimsize in parent_dim_sizes and (same_dim_count <= parent_same_dim_count):
+                parent_same_dim_count = phony_dim_sizes.count(dimsize)
+                # check if dimsize is already in parent phony dims
+                # check if already found phony dims is less than parent phony dims
+                if dimsize in phony_dim_sizes and (var_dim_count < parent_same_dim_count):
                     # this takes the dimension which is first
                     # (if equal dimension sizes) which is in line with netcdf
                     # see https://github.com/Unidata/netcdf-c/issues/1484
-                    parent_dim_names = [name for name in
-                                              self._parent._current_dim_sizes.keys()
-                                              if 'phony_dim' in name]
-                    idx1 = [i for i, val in enumerate(parent_dim_sizes) if val == dimsize]
-                    idx1 = idx1[unscaled_dims.count(dimsize)]
-                    name = parent_dim_names[idx1]
-                # create new phony dimension if new dimension detected
+                    parent_dim_indexes = [i for i, val in enumerate(phony_dim_sizes) if val == dimsize]
+                    dim_index = parent_dim_indexes[var_dim_count]
+                    name = phony_dim_names[dim_index]
                 else:
+                    # create new phony dimension if new dimension detected
+                    # increase dim_id
                     name = 'phony_dim_{}'.format(self._parent._unscaled_dim_id)
                     self._parent._unscaled_dim_id += 1
                     self._parent._create_dimension(name, dimsize)
-                unscaled_dims.append(dimsize)
+                var_phony_dims.append(dimsize)
             else:
                 name = _name_from_dimension(dim)
             dims.append(name)
