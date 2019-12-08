@@ -544,6 +544,12 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
         assert ds.variables['foo4'].dimensions[1] == 'phony_dim_0'
         assert ds.variables['foo4'].dimensions[2] == 'phony_dim_1'
 
+        assert ds.variables['x'].dimensions[0] == 'phony_dim_0'
+        assert ds.variables['y'].dimensions[0] == 'phony_dim_0'
+        assert ds.variables['z'].dimensions[0] == 'phony_dim_0'
+        assert ds.variables['x1'].dimensions[0] == 'phony_dim_3'
+        assert ds.variables['y1'].dimensions[0] == 'phony_dim_0'
+        assert ds.variables['z1'].dimensions[0] == 'phony_dim_0'
 
 def test_hierarchical_access_auto_create(tmp_local_or_remote_netcdf):
     ds = h5netcdf.File(tmp_local_or_remote_netcdf, 'w')

@@ -103,13 +103,12 @@ class BaseVariable(object):
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
-
+                # need to sort dict in python < 3.7, so sorting anyway
                 phony_dim_names = [name for name in
-                                   self._parent._dim_order.keys() if
+                                   sorted(self._parent._dim_order.keys()) if
                                    'phony_dim' in name]
                 phony_dim_sizes = [self._parent._current_dim_sizes[name]
                                    for name in phony_dim_names]
-
                 # get current dimension
                 dimsize = self.shape[axis]
                 # get already processed phony dims
