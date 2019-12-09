@@ -570,6 +570,7 @@ def test_invalid_netcdf4_mixed(tmp_local_or_remote_netcdf):
 
         f['foo2'].dims.create_scale(f['x1'])
         f['foo2'].dims.create_scale(f['y1'])
+        f['foo2'].dims[0].label = 'x'
         f['foo2'].dims[0].attach_scale(f['x1'])
         f['foo2'].dims[1].attach_scale(f['y1'])
 

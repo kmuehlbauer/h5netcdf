@@ -96,10 +96,17 @@ class BaseVariable(object):
 
         dims = []
         var_phony_dims = []
-        for axis, dim in enumerate(self._h5ds.dims):
+        print("h5dims", list(self._h5ds.dims.values())[0].label)
+        for axis, dim in self._h5ds.dims.items():
+            print("DIM:", axis, type(dim), dim)
+            try:
+                print("dim", dim)
+            except:
+                pass
             # if unlabeled dimensions are found
             # create phony dimensions as they are encountered
             if len(dim) == 0:
+                print("Ax/DIM:", self.name, axis, dim)
                 # check on first occasion
                 if self._root._unscaled_dim_count is None:
                     self._root._determine_unscaled_dimensions()
@@ -132,6 +139,7 @@ class BaseVariable(object):
                     self._parent._create_dimension(name, dimsize)
                 var_phony_dims.append(dimsize)
             else:
+                print("Ax/DIM scaled:", self.name, axis, dim)
                 name = _name_from_dimension(dim)
             dims.append(name)
         return tuple(dims)
@@ -262,13 +270,16 @@ class Group(Mapping):
         self._variables = _LazyObjectLookup(self, self._variable_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
+        phony_dims = []
         for k, v in self._h5group.items():
+            print(k)
             if isinstance(v, h5_group_types):
                 # add to the groups collection if this is a h5py(d) Group
                 # instance
                 self._groups.add(k)
             else:
                 if v.attrs.get('CLASS') == b'DIMENSION_SCALE':
+                    print("scaled dimension:", k)
                     dim_id = v.attrs.get('_Netcdf4Dimid')
                     if '_Netcdf4Coordinates' in v.attrs:
                         assert dim_id is not None
@@ -289,11 +300,32 @@ class Group(Mapping):
                         self._determine_current_dimension_size(k, current_size)
 
                     self._dim_order[k] = dim_id
+                else:
+                    print("unscaled variable:", k)
+                    print("shape, dim:", v.shape, v.ndim)
+                    [phony_dims.append(i) for i in list(v.shape) if list(v.shape).count(i) > phony_dims.count(i)]
+                    var_phony_dims = {i:v.shape[i] for i, j in v.dims.items() if len(j) == 0}
+                    print(var_phony_dims)
+                    scaled_dims = sum([len(j) for j in v.dims.values()])
+                    print("num scaled dims:", scaled_dims)
+                    print("num unscaled dims:", v.ndim - scaled_dims)
+
                 if not _netcdf_dimension_but_not_variable(v):
+                    #print("unknown:", k, v)
+                    #print(dir(v))
+                    #print(dir(v.dims))
+                    #for i in v.dims.keys():
+                    #    print(i)#, v.dims[i])
+                    #print(v.shape, v.ndim)
+                    #dims = v._h5ds.dims.values()
+                    #print(len(dims), [len(dim) for dim in dims])
                     var_name = k
                     if k.startswith('_nc4_non_coord_'):
                         var_name = k[len('_nc4_non_coord_'):]
                     self._variables.add(var_name)
+        print("PD:", phony_dims)
+
+
 
         self._initialized = True
 
