@@ -1,5 +1,6 @@
 # For details on how netCDF4 builds on HDF5:
 # http://www.unidata.ucar.edu/software/netcdf/docs/file_format_specifications.html#netcdf_4_spec
+from collections import Counter
 from collections.abc import Mapping
 import os.path
 import warnings
@@ -95,16 +96,25 @@ class BaseVariable(object):
             return (child_name,)
 
         dims = []
+        phony_dims = Counter()
         for axis, dim in enumerate(self._h5ds.dims):
-            # TODO: read dimension labels even if there is no associated
-            # scale? it's not netCDF4 spec, but it is unambiguous...
-            # Also: the netCDF lib can read HDF5 datasets with unlabeled
-            # dimensions.
-            if len(dim) == 0:
-                raise ValueError('variable %r has no dimension scale '
-                                 'associated with axis %s'
-                                 % (self.name, axis))
-            name = _name_from_dimension(dim)
+            if len(dim):
+                name = _name_from_dimension(dim)
+            else:
+                # if unlabeled dimensions are found
+                if self._root._phony_dim_count is None:
+                    raise ValueError('variable %r has no dimension scale '
+                                     'associated with axis %s. \n'
+                                     'Use phony_dims=%r for sorted naming or '
+                                     'phony_dims=%r for per access naming.'
+                                     % (self.name, axis, 'sort', 'access'))
+                else:
+                    # get current dimension
+                    dimsize = self.shape[axis]
+                    phony_dims += Counter([dimsize])
+                    # get dimension name
+                    name = self._parent._phony_dims[(dimsize,
+                                                     phony_dims[dimsize] - 1)]
             dims.append(name)
         return tuple(dims)
 
@@ -223,6 +233,7 @@ class Group(Mapping):
         self._parent = parent
         self._root = parent._root
         self._h5path = _join_h5paths(parent.name, name)
+        self._phony_dims = None
 
         if parent is not self:
             self._dim_sizes = parent._dim_sizes.new_child()
@@ -233,6 +244,8 @@ class Group(Mapping):
         self._variables = _LazyObjectLookup(self, self._variable_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
+        # initialize phony dimension counter
+        phony_dims = Counter()
         for k, v in self._h5group.items():
             if isinstance(v, h5_group_types):
                 # add to the groups collection if this is a h5py(d) Group
@@ -260,12 +273,32 @@ class Group(Mapping):
                         self._determine_current_dimension_size(k, current_size)
 
                     self._dim_order[k] = dim_id
+                else:
+                    if self._root._phony_dim_count is not None:
+                        # if unscaled variable, get phony dimensions
+                        var_phony_dims = [v.shape[i] for i, j in
+                                          enumerate(v.dims) if len(j) == 0]
+                        phony_dims |= Counter(var_phony_dims)
+
                 if not _netcdf_dimension_but_not_variable(v):
                     if isinstance(v, h5py.Dataset):
                         var_name = k
                         if k.startswith('_nc4_non_coord_'):
                             var_name = k[len('_nc4_non_coord_'):]
                         self._variables.add(var_name)
+
+        # iterate over found phony dimensions and create them
+        if self._root._phony_dim_count is not None:
+            self._phony_dims = {}
+            for size in phony_dims:
+                for cnt in range(phony_dims[size]):
+                    name = 'phony_dim_{}'.format(
+                        len(self._phony_dims) +
+                        self._root._phony_dim_count)
+                    self._phony_dims[(size, cnt)] = name
+                    self._create_dimension(name, size)
+            # finally increase phony dim count
+            self._root._phony_dim_count += len(self._phony_dims)
 
         self._initialized = True
 
@@ -582,7 +615,8 @@ class Group(Mapping):
 
 class File(Group):
 
-    def __init__(self, path, mode='a', invalid_netcdf=None, **kwargs):
+    def __init__(self, path, mode='a', invalid_netcdf=None, phony_dims=None,
+                 **kwargs):
         try:
             if isinstance(path, str):
                 if path.startswith(('http://', 'https://', 'hdf5://')):
@@ -626,12 +660,25 @@ class File(Group):
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
+        if phony_dims is not None:
+            self._phony_dim_count = 0
+        else:
+            self._phony_dim_count = None
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
-
         super(File, self).__init__(self, self._h5path)
+        # initialize all groups to detect/create phony dimensions
+        # mimics netcdf-c style naming
+        if phony_dims == 'sort':
+            self._determine_phony_dimensions()
+
+    def _determine_phony_dimensions(self):
+        def get_phony_dimension_count(grp):
+            for name in grp.groups:
+                get_phony_dimension_count(grp[name])
+        get_phony_dimension_count(self)
 
     def _check_valid_netcdf_dtype(self, dtype, stacklevel=3):
         dtype = np.dtype(dtype)
