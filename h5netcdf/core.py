@@ -85,15 +85,23 @@ class BaseVariable(object):
         return self._h5ds.name
 
     def _lookup_dimensions(self):
+        print("Name:", self.name)
+        print("print_dimsizes:", self._parent._dim_sizes)
+        print("print_dimsizes:", self._parent._dim_order)
+        print("phony dims:", self._parent._phony_dims)
         attrs = self._h5ds.attrs
         if '_Netcdf4Coordinates' in attrs:
             order_dim = _reverse_dict(self._parent._dim_order)
             return tuple(order_dim[coord_id]
                          for coord_id in attrs['_Netcdf4Coordinates'])
 
+        print("ParentDims:", self._parent.dimensions)
+
         child_name = self.name.split('/')[-1]
         if child_name in self._parent.dimensions:
             return (child_name,)
+
+
 
         dims = []
         phony_dims = defaultdict(int)
@@ -246,6 +254,8 @@ class Group(Mapping):
 
         # initialize phony dimension counter
         phony_dims = defaultdict(int)
+        labeled_dims = defaultdict(int)
+        vdims1 = defaultdict(int)
         for k, v in self._h5group.items():
             if isinstance(v, h5_group_types):
                 # add to the groups collection if this is a h5py(d) Group
@@ -253,7 +263,9 @@ class Group(Mapping):
                 self._groups.add(k)
             else:
                 if v.attrs.get('CLASS') == b'DIMENSION_SCALE':
+                    print('labeled:', k)
                     dim_id = v.attrs.get('_Netcdf4Dimid')
+                    print("dimid:", dim_id)
                     if '_Netcdf4Coordinates' in v.attrs:
                         assert dim_id is not None
                         coord_ids = v.attrs['_Netcdf4Coordinates']
@@ -266,6 +278,8 @@ class Group(Mapping):
                         current_size = v.size
 
                     self._dim_sizes[k] = size
+                    print("labeledsize:", size)
+                    labeled_dims[size] += 1
                     # Figure out the current size of a dimension, which for
                     # unlimited dimensions requires looking at the actual
                     # variables.
@@ -274,6 +288,7 @@ class Group(Mapping):
 
                     self._dim_order[k] = dim_id
                 else:
+                    print('unlabeled:', k)
                     if self._root._phony_dim_count is not None:
                         # if unscaled variable, get phony dimensions
                         vdims = defaultdict(int)
@@ -290,16 +305,26 @@ class Group(Mapping):
                             var_name = k[len('_nc4_non_coord_'):]
                         self._variables.add(var_name)
 
+        print("labeled_dims:", labeled_dims)
+        print("phony_dims:", phony_dims)
+        print("dimsizes:", [f"{k}:{v}" for k, v in self._dim_sizes.items()])
         # iterate over found phony dimensions and create them
         if self._root._phony_dim_count is not None:
             self._phony_dims = {}
             for size in phony_dims:
                 for cnt in range(phony_dims[size]):
-                    name = 'phony_dim_{}'.format(
-                        len(self._phony_dims) +
-                        self._root._phony_dim_count)
+                    print(size, cnt)
+                    print(labeled_dims[size])
+                    print(list(self._dim_sizes.keys())[cnt])
+                    if labeled_dims[size] < cnt + 1:
+                        name = 'phony_dim_{}'.format(
+                            len(self._phony_dims) +
+                            self._root._phony_dim_count)
+                        self._create_dimension(name, size)
+                    else:
+                        name = list(self._dim_sizes.keys())[cnt]
+                    print(size, cnt, name)
                     self._phony_dims[(size, cnt)] = name
-                    self._create_dimension(name, size)
             # finally increase phony dim count
             print(len(self._phony_dims))
             print(self._dim_sizes)

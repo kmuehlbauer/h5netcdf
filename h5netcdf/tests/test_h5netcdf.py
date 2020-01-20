@@ -637,16 +637,17 @@ def test_invalid_netcdf4_mixed(tmp_local_or_remote_netcdf):
             f['foo2'].dims.create_scale(f['y1'])
        #     f['foo2'].dims.create_scale(f['y1'])
         else:
-            #f['x1'].make_scale()
-            f['x'].make_scale()
+            f['x1'].make_scale()
+            #f['x'].make_scale()
             f['y1'].make_scale()
-            f['z1'].make_scale()
+            #f['z'].make_scale()
        #     f['y1'].make_scale()
         #f['foo2'].dims.create_scale(f['x1'])
         #f['foo2'].dims.create_scale(f['y1'])
         #f['foo2'].dims[0].label = 'x'
-        #f['foo2'].dims[0].attach_scale(f['x1'])
-        #f['foo2'].dims[1].attach_scale(f['y1'])
+        f['foo2'].dims[0].attach_scale(f['x1'])
+        f['foo2'].dims[1].attach_scale(f['y1'])
+        #f['foo1'].dims[2].attach_scale(f['z'])
 
 
 
@@ -673,58 +674,58 @@ def test_invalid_netcdf4_mixed(tmp_local_or_remote_netcdf):
         # assert var['x1'].dimensions[0] == 'x1'
         # assert var['y1'].dimensions[0] == 'y1'
         # assert var['z1'].dimensions[0] == 'phony_dim_0'
-
-    with h5netcdf.File(tmp_local_or_remote_netcdf, 'r',
-                       phony_dims='access') as ds:
-        print(ds)
-        # var = ds.variables
-        # assert var['foo1'].dimensions[0] == 'phony_dim_0'
-        # assert var['foo1'].dimensions[1] == 'phony_dim_1'
-        # assert var['foo1'].dimensions[2] == 'phony_dim_2'
-        # assert var['foo2'].dimensions[0] == 'x1'
-        # assert var['foo2'].dimensions[1] == 'y1'
-        # assert var['foo2'].dimensions[2] == 'phony_dim_0'
-        # assert var['foo3'].dimensions[0] == 'phony_dim_0'
-        # assert var['foo3'].dimensions[1] == 'phony_dim_1'
-        # assert var['foo3'].dimensions[2] == 'phony_dim_2'
-        # assert var['foo4'].dimensions[0] == 'phony_dim_3'
-        # assert var['foo4'].dimensions[1] == 'phony_dim_0'
-        # assert var['foo4'].dimensions[2] == 'phony_dim_1'
-        #
-        # assert var['x'].dimensions[0] == 'phony_dim_0'
-        # assert var['y'].dimensions[0] == 'phony_dim_0'
-        # assert var['z'].dimensions[0] == 'phony_dim_0'
-        # assert var['x1'].dimensions[0] == 'x1'
-        # assert var['y1'].dimensions[0] == 'y1'
-        # assert var['z1'].dimensions[0] == 'phony_dim_0'
+    #
+    # with h5netcdf.File(tmp_local_or_remote_netcdf, 'r',
+    #                    phony_dims='access') as ds:
+    #     print(ds)
+    #     # var = ds.variables
+    #     # assert var['foo1'].dimensions[0] == 'phony_dim_0'
+    #     # assert var['foo1'].dimensions[1] == 'phony_dim_1'
+    #     # assert var['foo1'].dimensions[2] == 'phony_dim_2'
+    #     # assert var['foo2'].dimensions[0] == 'x1'
+    #     # assert var['foo2'].dimensions[1] == 'y1'
+    #     # assert var['foo2'].dimensions[2] == 'phony_dim_0'
+    #     # assert var['foo3'].dimensions[0] == 'phony_dim_0'
+    #     # assert var['foo3'].dimensions[1] == 'phony_dim_1'
+    #     # assert var['foo3'].dimensions[2] == 'phony_dim_2'
+    #     # assert var['foo4'].dimensions[0] == 'phony_dim_3'
+    #     # assert var['foo4'].dimensions[1] == 'phony_dim_0'
+    #     # assert var['foo4'].dimensions[2] == 'phony_dim_1'
+    #     #
+    #     # assert var['x'].dimensions[0] == 'phony_dim_0'
+    #     # assert var['y'].dimensions[0] == 'phony_dim_0'
+    #     # assert var['z'].dimensions[0] == 'phony_dim_0'
+    #     # assert var['x1'].dimensions[0] == 'x1'
+    #     # assert var['y1'].dimensions[0] == 'y1'
+    #     # assert var['z1'].dimensions[0] == 'phony_dim_0'
 
     with netCDF4.Dataset(tmp_local_or_remote_netcdf, 'r') as ds:
         #print(tmp_local_or_remote_netcdf)
         print(ds)
-        # var = ds.variables
-        # assert var['foo1'].dimensions[0] == 'phony_dim_0'
-        # assert var['foo1'].dimensions[1] == 'phony_dim_1'
-        # assert var['foo1'].dimensions[2] == 'phony_dim_2'
-        # assert var['foo2'].dimensions[0] == 'x1'
-        # assert var['foo2'].dimensions[1] == 'y1'
-        # assert var['foo2'].dimensions[2] == 'phony_dim_0'
-        # assert var['foo3'].dimensions[0] == 'phony_dim_0'
-        # assert var['foo3'].dimensions[1] == 'phony_dim_1'
-        # assert var['foo3'].dimensions[2] == 'phony_dim_2'
-        # assert var['foo4'].dimensions[0] == 'phony_dim_3'
-        # assert var['foo4'].dimensions[1] == 'phony_dim_0'
-        # assert var['foo4'].dimensions[2] == 'phony_dim_1'
-        #
-        # assert var['x'].dimensions[0] == 'phony_dim_0'
-        # assert var['y'].dimensions[0] == 'phony_dim_0'
-        # assert var['z'].dimensions[0] == 'phony_dim_0'
-        # assert var['x1'].dimensions[0] == 'x1'
-        # assert var['y1'].dimensions[0] == 'y1'
-        # assert var['z1'].dimensions[0] == 'phony_dim_0'
+        var = ds.variables
+        assert var['foo1'].dimensions[0] == 'phony_dim_0'
+        assert var['foo1'].dimensions[1] == 'phony_dim_1'
+        assert var['foo1'].dimensions[2] == 'phony_dim_2'
+        assert var['foo2'].dimensions[0] == 'x1'
+        assert var['foo2'].dimensions[1] == 'y1'
+        assert var['foo2'].dimensions[2] == 'phony_dim_0'
+        assert var['foo3'].dimensions[0] == 'phony_dim_0'
+        assert var['foo3'].dimensions[1] == 'phony_dim_1'
+        assert var['foo3'].dimensions[2] == 'phony_dim_2'
+        assert var['foo4'].dimensions[0] == 'phony_dim_3'
+        assert var['foo4'].dimensions[1] == 'phony_dim_0'
+        assert var['foo4'].dimensions[2] == 'phony_dim_1'
+
+        assert var['x'].dimensions[0] == 'phony_dim_0'
+        assert var['y'].dimensions[0] == 'phony_dim_0'
+        assert var['z'].dimensions[0] == 'phony_dim_0'
+        assert var['x1'].dimensions[0] == 'x1'
+        assert var['y1'].dimensions[0] == 'y1'
+        assert var['z1'].dimensions[0] == 'phony_dim_0'
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, 'r') as ds:
         with raises(ValueError):
-            ds.variables['foo1'].dimensions
+            ds.variables['foo2'].dimensions
 
 
 def test_hierarchical_access_auto_create(tmp_local_or_remote_netcdf):
