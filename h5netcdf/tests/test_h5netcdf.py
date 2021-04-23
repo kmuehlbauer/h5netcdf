@@ -198,11 +198,9 @@ def write_h5netcdf(tmp_netcdf):
 
     g.dimensions["y"] = 10
     g.create_variable("y_var", ("y",), float)
-    g.flush()
 
     ds.dimensions["mismatched_dim"] = 1
     ds.create_variable("mismatched_dim", dtype=int)
-    ds.flush()
 
     dt = h5py.special_dtype(vlen=str)
     v = ds.create_variable("var_len_str", ("x",), dtype=dt)
@@ -484,17 +482,20 @@ def test_repr(tmp_local_or_remote_netcdf):
     assert "float" in repr(v)
     assert "units" in repr(v)
 
-    f.dimensions["temp"] = None
-    assert "temp: Unlimited (current: 0)" in repr(f)
-    f.resize_dimension("temp", 5)
-    assert "temp: Unlimited (current: 5)" in repr(f)
-
     f.close()
 
     assert "Closed" in repr(f)
     assert "Closed" in repr(d)
     assert "Closed" in repr(g)
     assert "Closed" in repr(v)
+
+    f = h5netcdf.File(tmp_local_or_remote_netcdf, "a")
+    f.dimensions["temp"] = None
+    assert "temp: Unlimited (current: 0)" in repr(f)
+    f.resize_dimension("temp", 5)
+    assert "temp: Unlimited (current: 5)" in repr(f)
+
+    f.close()
 
 
 def test_attrs_api(tmp_local_or_remote_netcdf):
