@@ -591,9 +591,7 @@ class Group(Mapping):
             kwargs = {}
             if self._dim_sizes[dim] is None:
                 kwargs["maxshape"] = (None,)
-            self._h5group.create_dataset(
-                name=dim, shape=(size,), dtype=">f4", **kwargs
-            )
+            self._h5group.create_dataset(name=dim, shape=(size,), dtype=">f4", **kwargs)
 
         h5ds = self._h5group[dim]
         h5ds.attrs["_Netcdf4Dimid"] = np.array(dim_order[dim], dtype=np.int32)
@@ -813,8 +811,10 @@ class File(Group):
 
     def _get_maximum_dimension_id(self):
         dimids = []
+
         def _dimids(name, obj):
             dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+
         self._h5file.visititems(_dimids)
         return max(dimids) if dimids else -1
 
