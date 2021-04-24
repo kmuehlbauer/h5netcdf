@@ -934,7 +934,7 @@ def test_creating_and_resizing_unlimited_dimensions(tmp_local_or_remote_netcdf):
 
 
 def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf):
-    with h5netcdf.File(tmp_local_or_remote_netcdf) as f:
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         f.dimensions["x"] = None
         f.dimensions["y"] = 2
 
@@ -978,7 +978,7 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
 
 
 def test_writing_to_an_unlimited_dimension(tmp_local_or_remote_netcdf):
-    with h5netcdf.File(tmp_local_or_remote_netcdf) as f:
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         # Two dimensions, only one is unlimited.
         f.dimensions["x"] = None
         f.dimensions["y"] = 3

@@ -462,6 +462,7 @@ class Group(Mapping):
                 "unable to create variable %r " "(name already exists)" % name
             )
 
+        # Create dimensions on the fly if they not exist.
         if data is not None:
             data = np.asarray(data)
             for d, s in zip(dimensions, data.shape):
@@ -490,6 +491,7 @@ class Group(Mapping):
                 stacklevel=stacklevel,
             )
 
+        # Name conflicts with a dimension name
         if name in self.dimensions and name not in dimensions:
             h5name = "_nc4_non_coord_" + name
         else:
@@ -523,17 +525,17 @@ class Group(Mapping):
         self._variables[h5name] = self._variable_cls(self, h5name, dimensions)
         variable = self._variables[h5name]
 
-        # Create dimension scale
+        # Create dimension scale.
         if name in self.dimensions:
             self._create_dim_scale(name)
             # Reattach to references
             if refs is not None:
                 self._attach_dim_scale(name, refs)
 
-        # Attach dimension scales to created variable
+        # Attach dimension scales to created variable.
         if name not in self.dimensions:
             variable._attach_dim_scales()
-            # Add _Netcdf4Coordinates attribute
+            # Add _Netcdf4Coordinates attribute.
             dims = variable.dimensions
             coord_ids = np.array([self._dim_order[d] for d in dims], "int32")
             if len(coord_ids) > 1:
@@ -586,6 +588,7 @@ class Group(Mapping):
     def _create_dim_scale(self, dim):
         """Create HDF5 dimension scale."""
         dim_order = self._dim_order.maps[0]
+        # Create dimension hdf5 dataset.
         if dim not in self._h5group:
             size = self._current_dim_sizes[dim]
             kwargs = {}
@@ -593,23 +596,24 @@ class Group(Mapping):
                 kwargs["maxshape"] = (None,)
             self._h5group.create_dataset(name=dim, shape=(size,), dtype=">f4", **kwargs)
 
+        # Set _Netcdf4Dimid
         h5ds = self._h5group[dim]
         h5ds.attrs["_Netcdf4Dimid"] = np.array(dim_order[dim], dtype=np.int32)
+
 
         if len(h5ds.shape) > 1:
             dims = self._variables[dim].dimensions
             coord_ids = np.array([dim_order[d] for d in dims], "int32")
             h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
 
-        # TODO: don't re-create scales if they already exist. With the
-        # current version of h5py, this would require using the low-level
-        # h5py.h5ds.is_scale interface to detect pre-existing scales.
         dimlen = bytes(f"{self._current_dim_sizes[dim]:10}", "ascii")
         scale_name = dim if dim in self.variables else NOT_A_VARIABLE + dimlen
         if h5py.__version__ < LooseVersion("2.10.0"):
-            h5ds.dims.create_scale(h5ds, scale_name)
+            if not h5py.h5ds.is_scale(h5ds.id):
+                h5ds.dims.create_scale(h5ds, scale_name)
         else:
-            h5ds.make_scale(scale_name)
+            if not h5py.h5ds.is_scale(h5ds.id):
+                h5ds.make_scale(scale_name)
 
     def _attach_dim_scale(self, name, refs):
         """Attach dimension scale to variable references"""
@@ -690,23 +694,21 @@ class Group(Mapping):
         # Resize the dimension.
         self._current_dim_sizes[dimension] = size
 
-        # If not a variable but dimension -> resize
+        # If not a variable but dimension -> resize.
         if dimension not in self.variables and dimension in self._h5group:
             self._h5group[dimension].resize((size,))
 
-        # Adapt to all variables
-        for var in self.variables.values():
+        # Get references of dimension.
+        refs = self._h5group[dimension].attrs.get("REFERENCE_LIST", [])
+
+        # Resize all references.
+        for v, dim in refs:
+            var = self[self._all_h5groups[v].name]
             new_shape = list(var.shape)
-            for i, d in enumerate(var.dimensions):
-                if d == dimension:
-                    new_shape[i] = size
+            new_shape[dim] = size
             new_shape = tuple(new_shape)
             if new_shape != var.shape:
                 var._h5ds.resize(new_shape)
-
-        # Recurse as dimensions are visible to this group and all child groups.
-        for i in self.groups.values():
-            i.resize_dimension(dimension, size)
 
 
 class File(Group):
