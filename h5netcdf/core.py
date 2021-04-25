@@ -596,11 +596,11 @@ class Group(Mapping):
                 kwargs["maxshape"] = (None,)
             self._h5group.create_dataset(name=dim, shape=(size,), dtype=">f4", **kwargs)
 
-        # Set _Netcdf4Dimid
+        # Set _Netcdf4Dimid.
         h5ds = self._h5group[dim]
         h5ds.attrs["_Netcdf4Dimid"] = np.array(dim_order[dim], dtype=np.int32)
 
-
+        # Set _Netcdf4Coordinates
         if len(h5ds.shape) > 1:
             dims = self._variables[dim].dimensions
             coord_ids = np.array([dim_order[d] for d in dims], "int32")
@@ -749,7 +749,7 @@ class File(Group):
             self._closed = False
 
         self._mode = mode
-        self._writable = not (mode == "r")
+        self._writable = mode != "r"
         self._root = self
         self._h5path = "/"
         self.invalid_netcdf = invalid_netcdf
@@ -794,6 +794,7 @@ class File(Group):
                     self.decode_vlen_strings = True
 
         self._max_dim_id = -1
+        self._labeled_dim_count = 0
         # These maps keep track of dimensions in terms of size (might be
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
@@ -803,36 +804,36 @@ class File(Group):
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
         super(File, self).__init__(self, self._h5path)
+        # get maximum dimension id
+        # get labeled_dim_count
+        if self._writable or phony_dims == "sort":
+            self._iterate_dimensions()
         # initialize all groups to detect/create phony dimensions
         # mimics netcdf-c style naming
         if phony_dims == "sort":
-            self._determine_phony_dimensions()
-        # get maximum dimension id
-        if self._writable:
-            self._max_dim_id = self._get_maximum_dimension_id()
+            self._init_phony_dimensions()
 
-    def _get_maximum_dimension_id(self):
-        dimids = []
+    def _iterate_dimensions(self):
+        dimids = [-1]
+        labeled_count = [0]
 
-        def _dimids(name, obj):
-            dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+        def _iterate(name, obj):
+            if self._writable:
+                dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+            if self._phony_dims_mode == "sort":
+                labeled_count.append(1 if obj.attrs.get("REFERENCE_LIST", None) is not None else 0)
 
-        self._h5file.visititems(_dimids)
-        return max(dimids) if dimids else -1
+        self._h5file.visititems(_iterate)
+        self._max_dim_id = max(dimids)
+        self._labeled_dim_count = sum(labeled_count)
 
-    def _determine_phony_dimensions(self):
-        def get_labeled_dimension_count(grp):
-            count = len(grp._dim_sizes.maps[0])
-            for name in grp.groups:
-                count += get_labeled_dimension_count(grp[name])
-            return count
+    def _init_phony_dimensions(self):
 
         def create_phony_dimensions(grp):
             grp._create_phony_dimensions()
             for name in grp.groups:
                 create_phony_dimensions(grp[name])
 
-        self._labeled_dim_count = get_labeled_dimension_count(self)
         create_phony_dimensions(self)
 
     def _check_valid_netcdf_dtype(self, dtype, stacklevel=3):
