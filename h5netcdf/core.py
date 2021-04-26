@@ -288,7 +288,10 @@ class Group(Mapping):
                 # instance
                 self._groups.add(k)
             else:
+                print("read var key:", k)
+                print("read var value:", v)
                 if v.attrs.get("CLASS") == b"DIMENSION_SCALE":
+                    print("is dimscale")
                     dim_id = v.attrs.get("_Netcdf4Dimid")
                     if "_Netcdf4Coordinates" in v.attrs:
                         assert dim_id is not None
@@ -317,6 +320,7 @@ class Group(Mapping):
 
                     self._dim_order[k] = dim_id
                 else:
+                    print("probably phony_dims")
                     if self._root._phony_dims_mode is not None:
                         # check if malformed variable
                         if not _unlabeled_dimension_mix(v):
@@ -327,11 +331,13 @@ class Group(Mapping):
                             for dimsize, cnt in vdims.items():
                                 phony_dims[dimsize] = max(phony_dims[dimsize], cnt)
 
+                print("nc4dim but not variable", k, _netcdf_dimension_but_not_variable(v))
                 if not _netcdf_dimension_but_not_variable(v):
                     if isinstance(v, h5_dataset_types):
                         var_name = k
                         if k.startswith("_nc4_non_coord_"):
                             var_name = k[len("_nc4_non_coord_") :]
+                        print("add variable:", var_name)
                         self._variables.add(var_name)
 
         # iterate over found phony dimensions and create them
@@ -456,8 +462,13 @@ class Group(Mapping):
         stacklevel = 4  # correct if name does not start with '/'
 
         # Todo: This function could be refactored for better readability
+        print("create variable")
+        print("name:", name)
+        print("dimensions:", dimensions)
 
-        if name in self and not _netcdf_dimension_but_not_variable(self._h5group[name]):
+
+        if name in self.variables and not _netcdf_dimension_but_not_variable(
+                self._h5group[name]):
             raise ValueError(
                 "unable to create variable %r " "(name already exists)" % name
             )
@@ -466,7 +477,9 @@ class Group(Mapping):
         if data is not None:
             data = np.asarray(data)
             for d, s in zip(dimensions, data.shape):
+                print(d, s)
                 if d not in self.dimensions:
+                    print("creating dim:", d, s)
                     self.dimensions[d] = s
 
         if dtype is None:
@@ -492,7 +505,9 @@ class Group(Mapping):
             )
 
         # Name conflicts with a dimension name
-        if name in self.dimensions and name not in dimensions:
+        #if name in self.dimensions and name not in dimensions:
+        if name in self.dimensions and (name not in dimensions or
+                                        (name in dimensions and len(dimensions) > 1)):
             h5name = "_nc4_non_coord_" + name
         else:
             h5name = name
@@ -508,11 +523,10 @@ class Group(Mapping):
         # Clear dummy HDF5 datasets with this name that were created for a
         # dimension scale without a corresponding variable.
         refs = None
-        if name in self.dimensions and name in self._h5group:
-            h5ds = self._h5group[name]
-            if _netcdf_dimension_but_not_variable(h5ds):
-                # Get current h5 references of existing dataset
-                refs = h5ds.attrs.get("REFERENCE_LIST", [])
+        if name in self.dimensions and _netcdf_dimension_but_not_variable(self._h5group[name]):
+            # Get current h5 references of existing dataset
+            refs = self._h5group[name].attrs.get("REFERENCE_LIST", [])
+            if name in dimensions and len(dimensions) == 1:
                 # detach scale if references are present
                 if len(refs) > 0:
                     self._detach_dim_scale(name, refs)
@@ -694,16 +708,28 @@ class Group(Mapping):
         # Resize the dimension.
         self._current_dim_sizes[dimension] = size
 
-        # If not a variable but dimension -> resize.
+        print("new_size:", size)
+
+        # Resize dimension in any case.
         if dimension not in self.variables and dimension in self._h5group:
+        #if dimension in self._h5group:
+            print("resizing dimension:", self._h5group[dimension])
+            print("keys:", list(self._h5group.keys()))
+            #var = self[self._all_h5groups[dimension].name]
+            #new_shape = list(var.shape)
+            #new_shape[dim] = size
+            #new_shape = tuple(new_shape)
             self._h5group[dimension].resize((size,))
 
         # Get references of dimension.
         refs = self._h5group[dimension].attrs.get("REFERENCE_LIST", [])
+        print("references:", refs)
 
         # Resize all references.
         for v, dim in refs:
+            print("varname:", self._all_h5groups[v].name)
             var = self[self._all_h5groups[v].name]
+            print(var)
             new_shape = list(var.shape)
             new_shape[dim] = size
             new_shape = tuple(new_shape)
@@ -804,8 +830,7 @@ class File(Group):
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
         super(File, self).__init__(self, self._h5path)
-        # get maximum dimension id
-        # get labeled_dim_count
+        # get maximum dimension id (_Netcdf4Dimid) and labeled_dim_count
         if self._writable or phony_dims == "sort":
             self._iterate_dimensions()
         # initialize all groups to detect/create phony dimensions
@@ -818,10 +843,11 @@ class File(Group):
         labeled_count = [0]
 
         def _iterate(name, obj):
+            attrs = obj.attrs
             if self._writable:
-                dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+                dimids.append(attrs.get("_Netcdf4Dimid", -1))
             if self._phony_dims_mode == "sort":
-                labeled_count.append(1 if obj.attrs.get("REFERENCE_LIST", None) is not None else 0)
+                labeled_count.append(1 if attrs.get("REFERENCE_LIST", None) is not None else 0)
 
         self._h5file.visititems(_iterate)
         self._max_dim_id = max(dimids)

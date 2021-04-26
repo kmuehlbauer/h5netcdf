@@ -826,6 +826,8 @@ def test_create_variable_matching_saved_dimension(tmp_local_or_remote_netcdf):
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "a") as f:
         f.create_variable("x", data=[0, 1], dimensions=("x",))
+        print(list(f.variables))
+        print(f.dimensions)
 
     with h5.File(tmp_local_or_remote_netcdf, "r") as f:
         assert f["y"].dims[0].keys() == ["x"]
@@ -914,13 +916,27 @@ def test_creating_and_resizing_unlimited_dimensions(tmp_local_or_remote_netcdf):
         f.dimensions["x"] = None
         f.dimensions["y"] = 15
         f.dimensions["z"] = None
+        f.resize_dimension("z", 10)
+
+        f.create_variable("foo", data=np.ones((15, 10)), dimensions=("y", "z",))
+        f.create_variable("z", data=np.ones((15, 10)), dimensions=("y", "z",))
+
+        print("h5netcdf dimensions", f.dimensions)
+        print("h5netcdf variables", list(f.variables))
+        print("h5 items:", list(f._h5group.items()))
         f.resize_dimension("z", 20)
+        print("h5 items:", list(f._h5group.items()))
 
         with pytest.raises(ValueError) as e:
             f.resize_dimension("y", 20)
         assert e.value.args[0] == (
             "Dimension 'y' is not unlimited and thus cannot be resized."
         )
+    import subprocess
+    subprocess.check_call(["h5dump", tmp_local_or_remote_netcdf])
+
+    import subprocess
+    subprocess.check_call(["ncdump", "-h", tmp_local_or_remote_netcdf])
 
     h5 = get_hdf5_module(tmp_local_or_remote_netcdf)
     # Assert some behavior observed by using the C netCDF bindings.
@@ -929,8 +945,19 @@ def test_creating_and_resizing_unlimited_dimensions(tmp_local_or_remote_netcdf):
         assert f["x"].maxshape == (None,)
         assert f["y"].shape == (15,)
         assert f["y"].maxshape == (15,)
-        assert f["z"].shape == (20,)
+        print("h5 z:", f["z"])
+        print("h5 variables:", list(f.keys()))
+        #print(f.dimensions)
+        #print(f.variables)
+        assert f["z"].shape == (10,)
         assert f["z"].maxshape == (None,)
+        assert f["_nc4_non_coord_z"].shape == (15, 10)
+
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as f:
+        print("h5netcdf dimensions:", f.dimensions)
+        print("h5netcdf variables:", list(f.variables))
+        print("h5netcdf z-var:", f.variables["z"])
+        print("f['z']:", f["z"])
 
 
 def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf):
