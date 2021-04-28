@@ -817,6 +817,7 @@ def test_create_variable_matching_saved_dimension(tmp_local_or_remote_netcdf):
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         f.dimensions["x"] = 2
+        f.dimensions["z"] = 2
         f.create_variable("y", data=[1, 2], dimensions=("x",))
 
     with h5.File(tmp_local_or_remote_netcdf, "r") as f:
@@ -824,10 +825,20 @@ def test_create_variable_matching_saved_dimension(tmp_local_or_remote_netcdf):
         assert f["y"].dims[0].keys() == [NOT_A_VARIABLE.decode("ascii") + dimlen]
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "a") as f:
-        f.create_variable("x", data=[0, 1], dimensions=("x",))
+        f.create_variable("x", data=[0, 1], dimensions=("z",))
+
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as f:
+        print(f.dimensions)
+        print(list(f.variables))
+        for k, v in f.variables.items():
+            print(k, v)
+        #assert f["y"].dims[0].keys() == ["x"]
+        #assert f["x"].dims[0].keys() == ["z"]
+
 
     with h5.File(tmp_local_or_remote_netcdf, "r") as f:
         assert f["y"].dims[0].keys() == ["x"]
+        assert f["x"].dims[0].keys() == ["z"]
 
 
 def test_invalid_netcdf_warns(tmp_local_or_remote_netcdf):

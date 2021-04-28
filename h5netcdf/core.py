@@ -89,7 +89,8 @@ class BaseVariable(object):
 
     @property
     def name(self):
-        return self._h5ds.name
+        # fix name if _nc4_non_coord_
+        return self._h5ds.name.replace("_nc4_non_coord_", "")
 
     def _lookup_dimensions(self):
         attrs = self._h5ds.attrs
@@ -220,12 +221,16 @@ class _LazyObjectLookup(Mapping):
 
     def __iter__(self):
         for name in self._objects:
-            yield name
+            # fix variable name for variable which clashes with dim name
+            yield name.replace("_nc4_non_coord_", "")
 
     def __len__(self):
         return len(self._objects)
 
     def __getitem__(self, key):
+        # check for _nc4_non_coord_ variable
+        if key not in self._objects and "_nc4_non_coord_" + key in self._objects:
+            key = "_nc4_non_coord_" + key
         if self._objects[key] is not None:
             return self._objects[key]
         else:
@@ -283,6 +288,7 @@ class Group(Mapping):
                 # instance
                 self._groups.add(k)
             else:
+                print("variable or dim scale:", k, v)
                 if v.attrs.get("CLASS") == b"DIMENSION_SCALE":
                     dim_id = v.attrs.get("_Netcdf4Dimid")
                     if "_Netcdf4Coordinates" in v.attrs:
@@ -322,12 +328,11 @@ class Group(Mapping):
                             for dimsize, cnt in vdims.items():
                                 phony_dims[dimsize] = max(phony_dims[dimsize], cnt)
 
+                print("attrs:", k, list(v.attrs.items()))
                 if not _netcdf_dimension_but_not_variable(v):
                     if isinstance(v, h5_dataset_types):
-                        var_name = k
-                        if k.startswith("_nc4_non_coord_"):
-                            var_name = k[len("_nc4_non_coord_") :]
-                        self._variables.add(var_name)
+                        print("new variable:", k)
+                        self._variables.add(k)
 
         # iterate over found phony dimensions and create them
         if self._root._phony_dims_mode is not None:
@@ -443,6 +448,9 @@ class Group(Mapping):
     def _create_child_variable(
         self, name, dimensions, dtype, data, fillvalue, **kwargs
     ):
+        print("\n\n")
+        print("create new variable:", name, dimensions)
+
         stacklevel = 4  # correct if name does not start with '/'
 
         if name in self:
@@ -454,6 +462,7 @@ class Group(Mapping):
             data = np.asarray(data)
             for d, s in zip(dimensions, data.shape):
                 if d not in self.dimensions:
+                    print("create dimensions:", d, s)
                     self.dimensions[d] = s
 
         if dtype is None:
@@ -478,10 +487,57 @@ class Group(Mapping):
                 stacklevel=stacklevel,
             )
 
+        def _create_coordinate_on_existing_dimension(name):
+            print("XXX create coordinate variable on existing dimensions")
+            if name in self._h5group:
+                print("name:", name)
+                h5ds = self._h5group[name]
+                print("h5ds:", h5ds)
+                if _netcdf_dimension_but_not_variable(h5ds):
+                    h5ds.attrs["NAME"] = name
+            self._variables[name] = self._variable_cls(self, name, dimensions)
+            variable = self._variables[name]
+
+            if fillvalue is not None:
+                value = variable.dtype.type(fillvalue)
+                variable.attrs._h5attrs["_FillValue"] = value
+            return variable
+
+
+        # todo: check if dimension, coordinate and/or data variable
+        if name in self.dimensions and name in dimensions and len(dimensions) == 1:
+            return _create_coordinate_on_existing_dimension(name)
+
+
         if name in self.dimensions and name not in dimensions:
+            print("XXX create data variable colliding with dimension name")
+
+        if name in self.dimensions and name in dimensions and len(dimensions) > 1:
+            print("XXX create data variable colliding with dimension name")
+
+        if (name in self.dimensions and name in dimensions and
+                len(dimensions) == 2 and name == dimensions[0] and
+                dimensions[1] not in self.variables and
+                dimensions[1] in self.dimensions):
+            print(f"XXX {name} create 2d coordinate variable on existing dimension")
+            print("dimensions[1]:", dimensions[1])
+            print(list(self.variables))
+            print(self.dimensions)
+            # todo need to remove former dimension dataset and recreate
+
+        if (name not in self.dimensions and name not in dimensions):
+            print("XXX create data variable")
+        # it's a char variable,
+        # it's two dimensional, and
+        # the inner dimension does not have a coordinate variable.
+
+        if name in self.dimensions and ((name not in dimensions) or
+                                        (name in dimensions and len(dimensions) > 1) and name != dimensions[0]):
             h5name = "_nc4_non_coord_" + name
         else:
             h5name = name
+
+        print("h5name:", h5name)
 
         shape = tuple(self._current_dim_sizes[d] for d in dimensions)
         maxshape = tuple(self._dim_sizes[d] for d in dimensions)
@@ -493,15 +549,24 @@ class Group(Mapping):
 
         # Clear dummy HDF5 datasets with this name that were created for a
         # dimension scale without a corresponding variable.
+        print(name, h5name, self.dimensions, dimensions, self._h5group[name] if name in self._h5group else None)
         if name in self.dimensions and name in self._h5group:
+            print("name:", name)
             h5ds = self._h5group[name]
+            print("h5ds:", h5ds)
             if _netcdf_dimension_but_not_variable(h5ds):
-                self._detach_dim_scale(name)
-                del self._h5group[name]
-
-        self._h5group.create_dataset(
-            h5name, shape, dtype=dtype, data=data, fillvalue=fillvalue, **kwargs
-        )
+                h5ds.attrs["NAME"] = h5name
+                #print("detaching and deleting")
+                #try:
+                #    self._detach_dim_scale(name)
+                #    print("scale detached")
+                #except RuntimeError:
+                #    pass
+                #del self._h5group[name]
+        else:
+            self._h5group.create_dataset(
+                h5name, shape, dtype=dtype, data=data, fillvalue=fillvalue, **kwargs
+            )
 
         self._variables[h5name] = self._variable_cls(self, h5name, dimensions)
         variable = self._variables[h5name]
