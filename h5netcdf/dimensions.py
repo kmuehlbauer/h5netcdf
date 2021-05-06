@@ -6,7 +6,7 @@ class Dimensions(MutableMapping):
         self._group = group
 
     def __getitem__(self, key):
-        return self._group._dim_sizes[key]
+        return self._group._dim_sizes.maps[0][key]
 
     def __setitem__(self, key, value):
         self._group._create_dimension(key, value)
@@ -15,11 +15,11 @@ class Dimensions(MutableMapping):
         raise NotImplementedError("cannot yet delete dimensions")
 
     def __iter__(self):
-        for key in self._group._dim_sizes:
+        for key in self._group._dim_sizes.maps[0]:
             yield key
 
     def __len__(self):
-        return len(self._group._dim_sizes)
+        return len(self._group._dim_sizes.maps[0])
 
     def __repr__(self):
         if self._group._root._closed:
