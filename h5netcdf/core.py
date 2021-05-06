@@ -217,16 +217,25 @@ class BaseVariable(object):
         for i, dim in enumerate(self.dimensions):
             # is unlimited dimensions
             if not self._parent._dim_sizes[dim]:
-                new_max = (
-                    (self.shape[i] or np.asarray(value).shape[i])
-                    if key[i].stop is None
-                    else key[i].stop
-                )
-                print(i, dim, self._parent._current_dim_sizes[dim], new_max)
+                new_max = 0 if key[i].stop is None else key[i].stop
+                new_max = max(new_max, self.shape[i])
+                # empty variable, empty dimensions, full key
+                if not new_max:
+                    # get value dimensions, they must match with variable dimension
+                    v = np.asarray(value)
+                    if v.ndim == self.ndim:
+                        new_max = v.shape[i]
+                    elif v.ndim == 0:
+                        # for scalars we take the current dimension site or 1
+                        new_max = self._parent._current_dim_sizes[dim] or 1
+                    else:
+                        raise IndexError("shape of data does not conform to slice")
                 # resize unlimited dimension if needed but no variables
                 if self._parent._current_dim_sizes[dim] < new_max:
                     self._parent.resize_dimension(dim, new_max, resize_vars=False)
-            new_shape += (self._parent._current_dim_sizes[dim],)
+                new_shape += (new_max,)
+            else:
+                new_shape += (self._parent._current_dim_sizes[dim],)
 
         # resize variable if needed before setting values
         if self.shape != new_shape:
@@ -516,7 +525,7 @@ class Group(Mapping):
         if name in self._dim_sizes.maps[0]:
             raise ValueError("dimension %r already exists" % name)
 
-        self._dim_sizes[name] = size
+        self._dim_sizes[name] = None if size == 0 else size
         self._current_dim_sizes[name] = 0 if size is None else size
         # Increase maximum dimension id (_Netcdf4Dimid)
         self._root._max_dim_id += 1
