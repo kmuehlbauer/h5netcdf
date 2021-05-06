@@ -73,37 +73,40 @@ def _invalid_netcdf_feature(feature, allow, file, stacklevel=0):
 
 
 def _expanded_indexer(key, ndim):
-    """Given a key for indexing an ndarray, return an equivalent key which is a
-    tuple with length equal to the number of dimensions.
+    """Expand indexing key to tuple of slices with length equal the number of dimensions."""
+    # always return tuple and force colons to slices
+    key = np.index_exp[key]
 
-    The expansion is done by replacing all `Ellipsis` items with the right
-    number of full slices and then padding the key with full slices so that it
-    reaches the appropriate dimensionality.
-    """
-    # Taken from xarray:
-    # https://github.com/pydata/xarray/blob/835a53e62b1e5018faa323c649149e8294dd6af7/xarray/core/indexing.py#L23
-    if not isinstance(key, tuple):
-        # numpy treats non-tuple keys equivalent to tuples of length 1
-        key = (key,)
-    new_key = []
-    # handling Ellipsis right is a little tricky, see:
-    # http://docs.scipy.org/doc/numpy/reference/arrays.indexing.html#advanced-indexing
-    found_ellipsis = False
-    for k in key:
-        if k is Ellipsis:
-            if not found_ellipsis:
-                new_key.extend((ndim + 1 - len(key)) * [slice(None)])
-                found_ellipsis = True
-            else:
-                new_key.append(slice(None))
-        else:
-            if isinstance(k, int):
-                k = slice(k, k + 1, None)
-            new_key.append(k)
-    if len(new_key) > ndim:
-        raise IndexError("too many indices")
-    new_key.extend((ndim - len(new_key)) * [slice(None)])
-    return tuple(new_key)
+    # dimensions
+    len_key = len(key)
+
+    # find Ellipsis
+    ellipsis = [i for i, k in enumerate(key) if k is Ellipsis]
+    if len(ellipsis) > 1:
+        raise IndexError(
+            f"an index can only have a single ellipsis ('...'), {len(ellipsis)} given"
+        )
+    else:
+        # expand Ellipsis wherever it is
+        len_key -= len(ellipsis)
+        res_dim_cnt = ndim - len_key
+        res_dims = res_dim_cnt * (slice(None),)
+        ellipsis = ellipsis[0] if ellipsis else None
+
+    # check for correct dimensionality
+    if ndim and res_dim_cnt < 0:
+        raise IndexError(
+            f"too many indices for array: array is {ndim}-dimensional, but {len_key} were indexed"
+        )
+
+    # convert integer indices to slices
+    key = tuple([slice(k, k + 1) if isinstance(k, int) else k for k in key])
+
+    # slices to build resulting key
+    k1 = slice(ellipsis)
+    k2 = slice(len_key, None) if ellipsis is None else slice(ellipsis + 1, None)
+
+    return key[k1] + res_dims + key[k2]
 
 
 def _check_netcdf4_variable_type(grp, name, dimensions):
@@ -219,6 +222,7 @@ class BaseVariable(object):
                     if key[i].stop is None
                     else key[i].stop
                 )
+                print(i, dim, self._parent._current_dim_sizes[dim], new_max)
                 # resize unlimited dimension if needed but no variables
                 if self._parent._current_dim_sizes[dim] < new_max:
                     self._parent.resize_dimension(dim, new_max, resize_vars=False)
