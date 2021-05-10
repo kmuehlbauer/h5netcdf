@@ -213,6 +213,7 @@ class BaseVariable(object):
         """Resize according to given key with respect to variable dimensions"""
         key = _expanded_indexer(key, self.ndim)
         # resize unlimited dimensions before setting values
+        print(self.name, self.shape)
         new_shape = ()
         for i, dim in enumerate(self.dimensions):
             # is unlimited dimensions
@@ -226,7 +227,7 @@ class BaseVariable(object):
                     if v.ndim == self.ndim:
                         new_max = v.shape[i]
                     elif v.ndim == 0:
-                        # for scalars we take the current dimension site or 1
+                        # for scalars we take the current dimension size or 1
                         new_max = self._parent._current_dim_sizes[dim] or 1
                     else:
                         raise IndexError("shape of data does not conform to slice")
@@ -241,12 +242,14 @@ class BaseVariable(object):
         if self.shape != new_shape:
             self._h5ds.resize(new_shape)
 
+        print(self.name, self.shape)
+
     def _ensure_dim_id(self):
         """Set _Netcdf4Dimid"""
-        # set _Netcdf4Dimid, use id of first dimension
-        # netCDF4 does this when the first variable's data is written
+        # see https://github.com/Unidata/netcdf4-python/issues/1104 for details
         if self.dimensions and not self._h5ds.attrs.get("_Netcdf4Dimid", False):
-            dim = self._parent._all_h5groups[self.dimensions[0]]
+            #dim = self._parent._all_h5groups[self.dimensions[0]]
+            dim = self._parent._h5group[self.dimensions[0]]
             if "_Netcdf4Dimid" in dim.attrs:
                 self._h5ds.attrs["_Netcdf4Dimid"] = dim.attrs["_Netcdf4Dimid"]
 
@@ -497,6 +500,7 @@ class Group(Mapping):
 
         dim_variable = _find_dim(self._h5group, dim_name)
 
+
         if "REFERENCE_LIST" not in dim_variable.attrs:
             return max_size
 
@@ -654,15 +658,11 @@ class Group(Mapping):
             name, dimensions, dtype, data, fillvalue, **kwargs
         )
 
-        # This is a bit of a hack, netCDF4 attaches _Netcdf4Dimid to every variable
-        # when a variable is first written to, after variable creation.
-        # Here we just attach it to every variable on creation.
-        variable._ensure_dim_id()
-
         if "coord" in nc4_var_type:
             self._create_dim_scale(name)
             if refs is not None:
                 self._attach_dim_scale(name, refs)
+            variable._ensure_dim_id()
 
         if "data" in nc4_var_type:
             variable._attach_dim_scales()
@@ -711,6 +711,7 @@ class Group(Mapping):
 
     def _create_dim_scale(self, dim):
         """Create HDF5 dimension scale."""
+        #print(dim, self)
         dim_order = self._dim_order.maps[0]
         if dim not in self._h5group:
             size = self._current_dim_sizes[dim]
@@ -740,11 +741,13 @@ class Group(Mapping):
         """Attach dimension scale to variable references"""
         for var, dim in refs:
             self._all_h5groups[var].dims[dim].attach_scale(self._all_h5groups[name])
+            #self._h5group[var].dims[dim].attach_scale(self._h5group[name])
 
     def _detach_dim_scale(self, name, refs):
         """Detach dimension scale from variable references"""
         for var, dim in refs:
             self._all_h5groups[var].dims[dim].detach_scale(self._all_h5groups[name])
+            #self._h5group[var].dims[dim].detach_scale(self._h5group[name])
 
     def _get_dim_scale_refs(self, name):
         """Get variable scale references from dimension scale"""

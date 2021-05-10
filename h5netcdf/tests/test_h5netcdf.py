@@ -120,6 +120,164 @@ def is_h5py_char_working(tmp_netcdf, name):
                 raise
 
 
+def create_netcdf_example_group(ds, idx):
+    # test dimension handling
+    g = ds.createGroup("dimtest" + str(idx))
+    g.createDimension("time", 0)  # time
+    g.createDimension("nvec", 5 + idx)  # nvec
+    g.createDimension("sample", 2 + idx)  # sample
+    g.createDimension("ship", 3 + idx)  # ship
+    #g.createDimension("ship_strlen", 10 + idx)  # ship_strlen
+    g.createDimension("collide", 5 + idx)  # collide
+
+    time = g.createVariable("time", "f8", ("time",))
+    data = g.createVariable("data", "i8", ("ship", "sample", "time", "nvec",))
+    collide = g.createVariable("collide", "i8", ("nvec",))
+    sample = g.createVariable("sample", "i8", ("time", "sample",))
+    #ship = g.createVariable("ship", "S1", ("ship", "ship_strlen",))
+
+    #time[:] = np.arange(10 + idx)
+    data[:] = 12.
+    collide[...] = np.arange(5 + idx)
+    sample[0:2, :2] = np.ones((2, 2))
+    #assert g["sample"].shape == (2, 2 + idx)
+    time[:] = np.arange(10 + idx)
+    print("data-shape:", g["data"].shape)
+    print("sample-shape:", g["sample"].shape)
+    #ship[0, :] = "Skiff"
+
+
+def create_h5netcdf_example_group(ds, idx):
+    g = ds.create_group("dimtest" + str(idx))
+    g.dimensions["time"] = 0  # time
+    g.dimensions["nvec"] = 5 + idx  # nvec
+    g.dimensions["sample"] = 2 + idx  # sample
+    g.dimensions["ship"] = 3 + idx  # ship
+    #g.dimensions["ship_strlen"] = 10 + idx  # ship_strlen
+    g.dimensions["collide"] = 5 + idx  # collide
+
+    g.create_variable("time", dimensions=("time",), dtype=np.float64)
+    g.create_variable("data", dimensions=("ship", "sample", "time", "nvec",),
+                      dtype=np.int64)
+    g.create_variable("collide", dimensions=("nvec",), dtype=np.int64)
+    g.create_variable("sample", dimensions=("time", "sample",), dtype=np.int64)
+    #g.create_variable("ship", dimensions=("ship", "ship_strlen",), dtype="S1")
+
+    #g.variables["time"][:] = np.arange(10 + idx)
+    g.variables["data"][:] = 12.
+
+    g.variables["collide"][...] = np.arange(5 + idx)
+    g.variables["sample"][0:2, :2] = np.ones((2, 2))
+    g.variables["time"][:] = np.arange(10 + idx)
+    print("data-shape:", g["sample"].shape)
+    print("sample-shape:", g["sample"].shape)
+    #g.variables["ship"][0, :] = "Skiff"
+
+
+
+def check_netcdf_group(tmp_netcdf):
+    with netCDF4.Dataset(tmp_netcdf, "r") as ds:
+        for i, grp in enumerate(["dimtest0", "dimtest1"]):
+            g = ds.groups[grp]
+            # assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
+            #                              'sample'}
+            assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
+            assert g.dimensions["time"].isunlimited()
+            assert g.dimensions["time"].size == 10 + i
+            assert not g.dimensions["nvec"].isunlimited()
+            assert g.dimensions["nvec"].size == 5 + i
+            assert not g.dimensions["sample"].isunlimited()
+            assert g.dimensions["sample"].size == 2 + i
+            #assert not g.dimensions["ship"].isunlimited()
+            #assert g.dimensions["ship"].size == 3 + i
+            #assert not g.dimensions["ship_strlen"].isunlimited()
+            #assert g.dimensions["ship_strlen"].size == 10 + i
+            assert not g.dimensions["collide"].isunlimited()
+            assert g.dimensions["collide"].size == 5 + i
+
+            #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
+            assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
+            assert g.variables["time"].shape == (10 + i,)
+            print("data.shape:", g.variables["data"].shape)
+            assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
+            assert g.variables["collide"].shape == (5 + i,)
+            print("sample.shape:", g.variables["sample"].shape)
+            assert g.variables["sample"].shape == (10 + i, 2 + i,)
+            #assert g.variables["ship"].shape == (3 + i, 10 + i,)
+
+
+def check_legacyapi_group(tmp_netcdf):
+    with legacyapi.Dataset(tmp_netcdf, "r") as ds:
+        for i, grp in enumerate(["dimtest0", "dimtest1"]):
+            g = ds.groups[grp]
+            #assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
+            #                             'sample'}
+            assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
+            assert g.dimensions["time"] is None
+            assert g._current_dim_sizes["time"] == 10 + i
+            assert g.dimensions["nvec"] == 5 + i
+            assert g.dimensions["sample"] == 2 + i
+            assert g.dimensions["ship"] == 3 + i
+            #assert g.dimensions["ship_strlen"] == 10 + i
+            assert g.dimensions["collide"] == 5 + i
+
+            #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
+            assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
+            assert g.variables["time"].shape == (10 + i,)
+            print("data.shape:", g.variables["data"].shape)
+            assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
+            assert g.variables["collide"].shape == (5 + i,)
+            print("sample.shape:", g.variables["sample"].shape)
+            assert g.variables["sample"].shape == (10 + i, 2 + i,)
+            #assert g.variables["ship"].shape == (3 + i, 10 + i,)
+
+
+def check_h5netcdf_group(tmp_netcdf):
+    with h5netcdf.File(tmp_netcdf, "r") as ds:
+        for i, grp in enumerate(["dimtest0", "dimtest1"]):
+            g = ds.groups[grp]
+            # assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
+            #                              'sample'}
+            assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
+            assert g.dimensions["time"] is None
+            assert g._current_dim_sizes["time"] == 10 + i
+            assert g.dimensions["nvec"] == 5 + i
+            assert g.dimensions["sample"] == 2 + i
+            assert g.dimensions["ship"] == 3 + i
+            #assert g.dimensions["ship_strlen"] == 10 + i
+            assert g.dimensions["collide"] == 5 + i
+
+            #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
+            assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
+            assert g.variables["time"].shape == (10 + i,)
+            print("data.shape:", g.variables["data"].shape)
+            assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
+            assert g.variables["collide"].shape == (5 + i,)
+            print("sample.shape:", g.variables["sample"].shape)
+            assert g.variables["sample"].shape == (10 + i, 2 + i,)
+            #assert g.variables["ship"].shape == (3 + i, 10 + i,)
+
+
+def write_dimensions(tmp_netcdf, write_module):
+    if write_module in [legacyapi, netCDF4]:
+        with write_module.Dataset(tmp_netcdf, "w") as ds:
+            create_netcdf_example_group(ds, 0)
+            create_netcdf_example_group(ds, 1)
+    else:
+        with write_module.File(tmp_netcdf, "w") as ds:
+            create_h5netcdf_example_group(ds, 0)
+            create_h5netcdf_example_group(ds, 1)
+
+
+def read_dimensions(tmp_netcdf, read_module):
+    if read_module == legacyapi:
+        check_legacyapi_group(tmp_netcdf)
+    elif read_module == netCDF4:
+        check_netcdf_group(tmp_netcdf)
+    else:
+        check_h5netcdf_group(tmp_netcdf)
+
+
 def write_legacy_netcdf(tmp_netcdf, write_module):
     ds = write_module.Dataset(tmp_netcdf, "w")
     ds.setncattr("global", 42)
@@ -163,26 +321,9 @@ def write_legacy_netcdf(tmp_netcdf, write_module):
     v = ds.createVariable("var_len_str", str, ("x"))
     v[0] = "foo"
 
-    # test dimension handling
-    g = ds.createGroup("dimtest")
-    g.createDimension("time", 0)  # time
-    g.createDimension("nvec", 5)  # nvec
-    g.createDimension("sample", 2)  # sample
-    g.createDimension("ship", 3)  # ship
-    g.createDimension("ship_strlen", 10)  # ship_strlen
-    g.createDimension("collide", 5)  # collide
-
-    time = g.createVariable("time", "f8", ("time",))
-    data = g.createVariable("data", "i8", ("ship", "sample", "time", "nvec",))
-    collide = g.createVariable("collide", "i8", ("nvec",))
-    sample = g.createVariable("sample", "i8", ("time", "sample",))
-    ship = g.createVariable("ship", "S1", ("ship", "ship_strlen",))
-
-    time[:] = np.arange(10)
-    data[:] = 12.
-    collide[...] = np.arange(5)
-    sample[0:2, :2] = np.ones((2, 2))
-    ship[0, :] = "Skiff"
+    # # test dimension handling
+    # create_netcdf_example_group(ds, 0)
+    # create_netcdf_example_group(ds, 1)
 
     ds.close()
 
@@ -227,27 +368,6 @@ def write_h5netcdf(tmp_netcdf):
     v = ds.create_variable("var_len_str", ("x",), dtype=dt)
     v[0] = _vlen_string
 
-    g = ds.create_group("dimtest")
-    g.dimensions["time"] = 0  # time
-    g.dimensions["nvec"] = 5  # nvec
-    g.dimensions["sample"] = 2  # sample
-    g.dimensions["ship"] = 3  # ship
-    g.dimensions["ship_strlen"] = 10  # ship_strlen
-    g.dimensions["collide"] = 5  # collide
-
-    g.create_variable("time", dimensions=("time",), dtype=np.float64)
-    g.create_variable("data", dimensions=("ship", "sample", "time", "nvec",),
-                      dtype=np.int64)
-    g.create_variable("collide", dimensions=("nvec",), dtype=np.int64)
-    g.create_variable("sample", dimensions=("time", "sample",), dtype=np.int64)
-    g.create_variable("ship", dimensions=("ship", "ship_strlen",), dtype="S1")
-
-    g.variables["time"][:] = np.arange(10)
-    g.variables["data"][:] = 12.
-    g.variables["collide"][...] = np.arange(5)
-    g.variables["sample"][0:2, :2] = np.ones((2, 2))
-    g.variables["ship"][0, :] = "Skiff"
-
     ds.close()
 
 
@@ -267,7 +387,7 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
     assert set(ds.variables) == set(
         ["foo", "y", "z", "intscalar", "scalar", "var_len_str", "mismatched_dim"]
     )
-    assert set(ds.groups) == set(["subgroup", "dimtest"])
+    assert set(ds.groups) == set(["subgroup"])
     assert ds.parent is None
     v = ds.variables["foo"]
     assert array_equal(v, np.ones((4, 5)))
@@ -345,18 +465,6 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
     assert v.shape == (10,)
     assert "y" in ds.groups["subgroup"].dimensions
 
-    g = ds.groups["dimtest"]
-    assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship', 'sample'} #| set(ds.dimensions)
-    if read_module is not netCDF4:
-        assert g.dimensions["time"] == None
-        assert g.variables["time"].shape == (10,)
-    else:
-        assert g.dimensions["time"].size == 10
-        assert g.dimensions["time"].isunlimited()
-    assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
-
-
-
     ds.close()
 
 
@@ -375,7 +483,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert set(ds.variables) == set(
         ["foo", "y", "z", "intscalar", "scalar", "var_len_str", "mismatched_dim"]
     )
-    assert set(ds.groups) == set(["subgroup", "dimtest"])
+    assert set(ds.groups) == set(["subgroup"])
     assert ds.parent is None
 
     v = ds["foo"]
@@ -457,12 +565,6 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert ds["/subgroup/y_var"].shape == (10,)
     assert ds["/subgroup"].dimensions["y"] == 10
 
-    g = ds.groups["dimtest"]
-    assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
-                                 'sample'}
-    assert g.dimensions["time"] == None
-    assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
-
     ds.close()
 
 
@@ -473,6 +575,27 @@ def roundtrip_legacy_netcdf(tmp_netcdf, read_module, write_module):
 
 def test_write_legacyapi_read_netCDF4(tmp_local_netcdf):
     roundtrip_legacy_netcdf(tmp_local_netcdf, netCDF4, legacyapi)
+
+
+@pytest.fixture(params=[[netCDF4, netCDF4],
+                        [legacyapi, legacyapi],
+                        [h5netcdf, h5netcdf],
+                        [legacyapi, netCDF4],
+                        [netCDF4, legacyapi],
+                        [h5netcdf, netCDF4],
+                        [netCDF4, h5netcdf],
+                        [legacyapi, h5netcdf],
+                        [h5netcdf, legacyapi],
+                        ])
+def read_write_matrix(request):
+    print("write module:", request.param[0].__name__)
+    print("read_module:", request.param[1].__name__)
+    return request.param
+
+
+def test_dimensions(tmp_local_netcdf, read_write_matrix):
+    write_dimensions(tmp_local_netcdf, read_write_matrix[0])
+    read_dimensions(tmp_local_netcdf, read_write_matrix[1])
 
 
 def test_compare_legacyapi_netCDF4(tmp_local_netcdf):
@@ -532,10 +655,20 @@ def test_fileobj(decode_vlen_strings):
         pytest.skip("h5py > 2.9.0 required to test file-like objects")
     fileobj = tempfile.TemporaryFile()
     write_h5netcdf(fileobj)
-    read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
-    fileobj = io.BytesIO()
-    write_h5netcdf(fileobj)
-    read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
+    with h5py.File(fileobj, "r") as ds:
+        print(ds)
+    #read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
+    #print(fileobj.getbuffer().nbytes)
+    fileobj1 = io.BytesIO()
+    print(fileobj1)
+    #print(fileobj1.getbuffer().nbytes)
+    write_h5netcdf(fileobj1)
+    with h5py.File(fileobj1, "r") as ds:
+        print(ds)
+    #print(fileobj1.getbuffer().nbytes)
+    #fileobj1.flush()
+    #print(fileobj1.getbuffer().nbytes)
+    #read_h5netcdf(fileobj1, h5netcdf, decode_vlen_strings)
 
 
 def test_repr(tmp_local_or_remote_netcdf):
