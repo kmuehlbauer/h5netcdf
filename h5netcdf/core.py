@@ -170,7 +170,7 @@ class BaseVariable(object):
         phony_dims = defaultdict(int)
         for axis, dim in enumerate(self._h5ds.dims):
             # get current dimension
-            dimsize = self.shape[axis]
+            dimsize = self._h5ds.shape[axis]#self.shape[axis]
             phony_dims[dimsize] += 1
             if len(dim):
                 name = _name_from_dimension(dim)
@@ -211,26 +211,29 @@ class BaseVariable(object):
 
     def _maybe_resize_dimensions(self, key, value):
         """Resize according to given key with respect to variable dimensions"""
+        # expand key to slices
         key = _expanded_indexer(key, self.ndim)
-        # resize unlimited dimensions before setting values
-        print(self.name, self.shape)
+        # keep shape
+        old_shape = self._h5ds.shape
         new_shape = ()
+        v = None
         for i, dim in enumerate(self.dimensions):
             # is unlimited dimensions
             if not self._parent._dim_sizes[dim]:
-                new_max = 0 if key[i].stop is None else key[i].stop
-                new_max = max(new_max, self.shape[i])
-                # empty variable, empty dimensions, full key
-                if not new_max:
-                    # get value dimensions, they must match with variable dimension
-                    v = np.asarray(value)
+                if key[i].stop is None:
+                    # if stop is None, get dimensions from value,
+                    # they must match with variable dimension
+                    if v is None:
+                        v = np.asarray(value)
                     if v.ndim == self.ndim:
                         new_max = v.shape[i]
                     elif v.ndim == 0:
-                        # for scalars we take the current dimension size or 1
-                        new_max = self._parent._current_dim_sizes[dim] or 1
+                        # for scalars we take the current dimension size
+                        new_max = self._parent._current_dim_sizes[dim]
                     else:
                         raise IndexError("shape of data does not conform to slice")
+                else:
+                    new_max = max(key[i].stop, self.shape[i])
                 # resize unlimited dimension if needed but no variables
                 if self._parent._current_dim_sizes[dim] < new_max:
                     self._parent.resize_dimension(dim, new_max, resize_vars=False)
@@ -238,11 +241,9 @@ class BaseVariable(object):
             else:
                 new_shape += (self._parent._current_dim_sizes[dim],)
 
-        # resize variable if needed before setting values
-        if self.shape != new_shape:
+        # resize variable if shape is changing
+        if old_shape != new_shape:
             self._h5ds.resize(new_shape)
-
-        print(self.name, self.shape)
 
     def _ensure_dim_id(self):
         """Set _Netcdf4Dimid"""
@@ -261,7 +262,10 @@ class BaseVariable(object):
 
     @property
     def shape(self):
-        return self._h5ds.shape
+        # to comply with netcdf4-python we need to report the current sizes
+        # of the dimensions, not the shape of the underlying dataspace
+        return tuple(
+            [self._parent._current_dim_sizes[d] for d in self.dimensions])
 
     @property
     def ndim(self):
@@ -617,15 +621,52 @@ class Group(Mapping):
         # variable needs chunking if at least one dimension is unlimited
         if None in maxshape:
             kwargs["maxshape"] = maxshape
+
+        print(dtype)
+        dtype = np.array([], dtype=dtype).dtype
+        if dtype == np.float:
+            print("float")
+            info = np.finfo
+        elif dtype == np.int:
+            print("interger")
+            info = np.iinfo
+        else:
+            info = None
+
+        fillvalue1 = fillvalue
+        if fillvalue is None:
+            if info is not None:
+                fillvalue1 = info(np.array([], dtype=dtype).dtype).min
+
+
         self._h5group.create_dataset(
-            name, shape, dtype=dtype, data=data, fillvalue=fillvalue, **kwargs
+            name, shape, dtype=dtype, data=data, fillvalue=fillvalue1, **kwargs
         )
         self._variables[name] = self._variable_cls(self, name, dimensions)
         variable = self._variables[name]
 
+        print(dtype)
+        print(variable.dtype)
+        dtype = np.array([], dtype=dtype).dtype
+        if dtype == np.float:
+            print("float")
+            info = np.finfo
+        elif dtype == np.int:
+            print("interger")
+            info = np.iinfo
+        else:
+            info = None
+
         if fillvalue is not None:
             value = variable.dtype.type(fillvalue)
             variable.attrs._h5attrs["_FillValue"] = value
+        # else:
+        #     if info is not None:
+        #         value = info(np.array([], dtype=dtype).dtype).min
+        #         variable.attrs._h5attrs["_FillValue"] = value
+        #         print("value:", value)
+
+        #variable.attrs._h5attrs["_FillValue"] = value
 
         return self._variables[name]
 
@@ -711,7 +752,6 @@ class Group(Mapping):
 
     def _create_dim_scale(self, dim):
         """Create HDF5 dimension scale."""
-        #print(dim, self)
         dim_order = self._dim_order.maps[0]
         if dim not in self._h5group:
             size = self._current_dim_sizes[dim]
@@ -826,45 +866,48 @@ class Group(Mapping):
         header = "<%s %r (%s members)>" % (self._cls_name, self.name, len(self))
         return "\n".join([header] + self._repr_body())
 
-    def resize_dimension(self, dimension, size, resize_vars=True):
+    def resize_dimension(self, dim, size, resize_vars=True):
         """Resize a dimension to a certain size.
 
         It will pad with the underlying HDF5 data sets' fill values (usually
         zero) where necessary.
         """
-        if self.dimensions[dimension] is not None:
+        if self.dimensions[dim] is not None:
             raise ValueError(
                 "Dimension '%s' is not unlimited and thus "
-                "cannot be resized." % dimension
+                "cannot be resized." % dim
             )
-
-        # Resize the dimension.
-        self._current_dim_sizes[dimension] = size
-
-        # If not a variable but dimension -> resize
-        if dimension not in self.variables and dimension in self._h5group:
-            self._h5group[dimension].resize((size,))
 
         # Adapt recursively to all variables
         if resize_vars:
-            self._resize_variables(dimension, size)
+            self._resize_variables(dim, size)
 
-    def _resize_variables(self, dimension, size, recurse=True):
+        # Resize the dimension.
+        self._current_dim_sizes[dim] = size
+
+        # If not a variable but dimension -> resize
+        # but coordinate variables need to be resized too
+        # todo: check if this workw well (add test)
+        if dim in self._h5group:
+            self._h5group[dim].resize((size,))
+
+    def _resize_variables(self, dim, size, recurse=True):
         """Resize variables"""
         # Adapt to all variables
         for var in self.variables.values():
-            new_shape = list(var.shape)
+            old_shape = var.shape
+            new_shape = list(old_shape)
             for i, d in enumerate(var.dimensions):
-                if d == dimension:
+                if d == dim:
                     new_shape[i] = size
             new_shape = tuple(new_shape)
-            if new_shape != var.shape:
+            if new_shape != old_shape:
                 var._h5ds.resize(new_shape)
 
         # Recurse as dimensions are visible to this group and all child groups.
         if recurse:
             for i in self.groups.values():
-                i._resize_variables(dimension, size)
+                i._resize_variables(dim, size)
 
 
 class File(Group):

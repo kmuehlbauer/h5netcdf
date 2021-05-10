@@ -142,8 +142,6 @@ def create_netcdf_example_group(ds, idx):
     sample[0:2, :2] = np.ones((2, 2))
     #assert g["sample"].shape == (2, 2 + idx)
     time[:] = np.arange(10 + idx)
-    print("data-shape:", g["data"].shape)
-    print("sample-shape:", g["sample"].shape)
     #ship[0, :] = "Skiff"
 
 
@@ -169,8 +167,6 @@ def create_h5netcdf_example_group(ds, idx):
     g.variables["collide"][...] = np.arange(5 + idx)
     g.variables["sample"][0:2, :2] = np.ones((2, 2))
     g.variables["time"][:] = np.arange(10 + idx)
-    print("data-shape:", g["sample"].shape)
-    print("sample-shape:", g["sample"].shape)
     #g.variables["ship"][0, :] = "Skiff"
 
 
@@ -198,10 +194,8 @@ def check_netcdf_group(tmp_netcdf):
             #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
             assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             #assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -224,10 +218,8 @@ def check_legacyapi_group(tmp_netcdf):
             #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
             assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             #assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -250,10 +242,8 @@ def check_h5netcdf_group(tmp_netcdf):
             #assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
             assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             #assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -602,19 +592,28 @@ def test_compare_legacyapi_netCDF4(tmp_local_netcdf):
     f0 = tmp_local_netcdf[:-3] + "0.nc"
     f1 = tmp_local_netcdf[:-3] + "1.nc"
     f2 = tmp_local_netcdf[:-3] + "2.nc"
-    write_legacy_netcdf(f0, legacyapi)
-    write_legacy_netcdf(f1, netCDF4)
-    write_h5netcdf(f2)
+    #write_legacy_netcdf(f0, legacyapi)
+    #write_legacy_netcdf(f1, netCDF4)
+    #write_h5netcdf(f2)
+    write_dimensions(f0, netCDF4)
+    write_dimensions(f1, legacyapi)
+    write_dimensions(f2, h5netcdf)
     import subprocess
-    #print(f0)
-    #print(f1)
-    #print(f2)
     diff1 = subprocess.run(["h5diff", "-c", f0, f1], capture_output=True, check=False)
     diff2 = subprocess.run(["h5diff", "-c", f0, f2], capture_output=True, check=False)
     diff3 = subprocess.run(["h5diff", "-c", f1, f2], capture_output=True, check=False)
     print(diff1.stdout.decode('utf-8'))
     print(diff2.stdout.decode("utf-8"))
     print(diff3.stdout.decode('utf-8'))
+
+    dump1 = subprocess.run(["h5dump", f0], capture_output=True, check=False)
+    dump2 = subprocess.run(["h5dump", f1], capture_output=True, check=False)
+    dump3 = subprocess.run(["h5dump", f2], capture_output=True, check=False)
+    print(dump1.stdout.decode('utf-8'))
+    print(dump2.stdout.decode("utf-8"))
+    print(dump3.stdout.decode('utf-8'))
+    #print(np.iinfo(np.int).max)
+
 
 
 def test_roundtrip_h5netcdf_legacyapi(tmp_local_netcdf):
@@ -655,20 +654,10 @@ def test_fileobj(decode_vlen_strings):
         pytest.skip("h5py > 2.9.0 required to test file-like objects")
     fileobj = tempfile.TemporaryFile()
     write_h5netcdf(fileobj)
-    with h5py.File(fileobj, "r") as ds:
-        print(ds)
-    #read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
-    #print(fileobj.getbuffer().nbytes)
-    fileobj1 = io.BytesIO()
-    print(fileobj1)
-    #print(fileobj1.getbuffer().nbytes)
-    write_h5netcdf(fileobj1)
-    with h5py.File(fileobj1, "r") as ds:
-        print(ds)
-    #print(fileobj1.getbuffer().nbytes)
-    #fileobj1.flush()
-    #print(fileobj1.getbuffer().nbytes)
-    #read_h5netcdf(fileobj1, h5netcdf, decode_vlen_strings)
+    read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
+    fileobj = io.BytesIO()
+    write_h5netcdf(fileobj)
+    read_h5netcdf(fileobj, h5netcdf, decode_vlen_strings)
 
 
 def test_repr(tmp_local_or_remote_netcdf):
@@ -1403,12 +1392,18 @@ def test_writing_to_an_unlimited_dimension_2(tmp_local_or_remote_netcdf):
         f.variables["dummy3"][...] = [[1, 2, 3], [5, 6, 7]]
         np.testing.assert_allclose(f.variables["dummy3"], [[1, 2, 3], [5, 6, 7]])
 
-        # other variables are not affected
-        assert f.variables["dummy1"].shape == (0, 3)
+        # other variables are reported correctly,
+        # but the underlying DATASPACE isn't affected
+        assert f.variables["dummy1"].shape == (2, 3)
+        assert f.variables["dummy1"]._h5ds.shape == (0, 3)
         assert f.variables["dummy2"].shape == (2, 3)
+        assert f.variables["dummy2"]._h5ds.shape == (2, 3)
         assert f.variables["dummy3"].shape == (2, 3)
-        assert g.variables["dummy4"].shape == (3, 0, 0)
+        assert f.variables["dummy3"]._h5ds.shape == (2, 3)
+        assert g.variables["dummy4"].shape == (3, 2, 2)
+        assert g.variables["dummy4"]._h5ds.shape == (3, 0, 0)
         assert g.variables["dummy5"].shape == (3, 3)
+        assert g.variables["dummy5"]._h5ds.shape == (3, 3)
 
 
 def test_resize_dimensions(tmp_local_netcdf):
@@ -1427,13 +1422,17 @@ def test_resize_dimensions(tmp_local_netcdf):
         f.resize_dimension("x", 3, resize_vars=False)
         assert f.dimensions["x"] is None
         assert f._current_dim_sizes["x"] == 3
-        assert f.variables["dummy"].shape == (0, 2)
+        assert f.variables["dummy"]._h5ds.shape == (0, 2)
+        # to comply with netcdf4-python this reports the shapes according
+        # to current dim sizes
+        assert f.variables["dummy"].shape == (3, 2)
         assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
 
         # Creating another variable with no data will now take the shape
         # of the current dimensions.
         f.create_variable("dummy3", dimensions=("x", "y"), dtype=np.int64)
         assert f.variables["dummy3"].shape == (3, 2)
+        assert f.variables["dummy3"]._h5ds.shape == (3, 2)
         assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
 
         # writing to a variable with an unlimited dimension
@@ -1442,14 +1441,16 @@ def test_resize_dimensions(tmp_local_netcdf):
         f.variables["dummy"][3:4] = np.ones((1, 2))
         assert f.variables["dummy"].shape == (4, 2)
         assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
-        assert f.variables["dummy3"].shape == (3, 2)
+        assert f.variables["dummy3"].shape == (4, 2)
+        assert f.variables["dummy3"]._h5ds.shape == (3, 2)
         assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
 
         f.variables["dummy"][4] = np.ones((1, 2))
         assert f._current_dim_sizes["x"] == 5
         assert f.variables["dummy"].shape == (5, 2)
         assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
-        assert f.variables["dummy3"].shape == (3, 2)
+        assert f.variables["dummy3"].shape == (5, 2)
+        assert f.variables["dummy3"]._h5ds.shape == (3, 2)
         assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
 
 
@@ -1506,11 +1507,12 @@ def test_reading_unlimited_dimensions_created_with_c_api(tmp_local_netcdf):
         assert f._current_dim_sizes["y"] == 3
         assert f._current_dim_sizes["z"] == 0
 
+        # Todo: reword comments
         # But the actual data-set and arrays are not correct.
         assert f["dummy1"].shape == (2, 3)
         # XXX: This array has some data with dimension x - netcdf does not
         # appear to keep dimensions consistent.
-        assert f["dummy2"].shape == (3, 0, 0)
+        assert f["dummy2"].shape == (3, 2, 2)
         f.groups["test"]["dummy3"].shape == (3, 3)
         f.groups["test"]["dummy4"].shape == (0, 0)
 
