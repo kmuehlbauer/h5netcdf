@@ -402,7 +402,9 @@ class Group(Mapping):
 
         self._dim_sizes[name] = size
         self._current_dim_sizes[name] = 0 if size is None else size
-        self._dim_order[name] = None
+        # Increase maximum dimension id (_Netcdf4Dimid)
+        self._root._max_dim_id += 1
+        self._dim_order[name] = self._root._max_dim_id
 
     @property
     def dimensions(self):
@@ -726,7 +728,7 @@ class File(Group):
                         self._preexisting_file = False
                     self._h5file = h5pyd.File(path, mode, **kwargs)
                 else:
-                    self._preexisting_file = os.path.exists(path)
+                    self._preexisting_file = os.path.exists(path) and mode != "w"
                     self._h5file = h5py.File(path, mode, **kwargs)
             else:  # file-like object
                 if h5py.__version__ < LooseVersion("2.9.0"):
@@ -744,6 +746,7 @@ class File(Group):
             self._closed = False
 
         self._mode = mode
+        self._writable = mode != "r"
         self._root = self
         self._h5path = "/"
         self.invalid_netcdf = invalid_netcdf
@@ -791,6 +794,7 @@ class File(Group):
         # unlimited), current size (identical to size for limited dimensions),
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
+        self._max_dim_id = -1
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
@@ -800,6 +804,18 @@ class File(Group):
         # mimics netcdf-c style naming
         if phony_dims == "sort":
             self._determine_phony_dimensions()
+        # get maximum dimension id
+        if self._writable:
+            self._max_dim_id = self._get_maximum_dimension_id()
+
+    def _get_maximum_dimension_id(self):
+        dimids = []
+
+        def _dimids(name, obj):
+            dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+
+        self._h5file.visititems(_dimids)
+        return max(dimids) if dimids else -1
 
     def _determine_phony_dimensions(self):
         def get_labeled_dimension_count(grp):
@@ -852,33 +868,8 @@ class File(Group):
     def parent(self):
         return None
 
-    def _set_unassigned_dimension_ids(self):
-        max_dim_id = -1
-
-        # collect the largest assigned dimension ID
-        groups = [self]
-        while groups:
-            group = groups.pop()
-            assigned_dim_ids = [
-                dim_id for dim_id in group._dim_order.values() if dim_id is not None
-            ]
-            max_dim_id = max([max_dim_id] + assigned_dim_ids)
-            groups.extend(group._groups.values())
-
-        # set all dimension IDs to valid values
-        next_dim_id = max_dim_id + 1
-        groups = [self]
-        while groups:
-            group = groups.pop()
-            for key in group._dim_order:
-                if group._dim_order[key] is None:
-                    group._dim_order[key] = next_dim_id
-                    next_dim_id += 1
-            groups.extend(group._groups.values())
-
     def flush(self):
         if "r" not in self._mode:
-            self._set_unassigned_dimension_ids()
             self._create_dim_scales()
             self._attach_dim_scales()
             if not self._preexisting_file and self._write_ncproperties:
