@@ -188,7 +188,9 @@ class BaseVariable(object):
                         raise IndexError("shape of data does not conform to slice")
                 else:
                     new_max = max(key[i].stop, self.shape[i])
-                # resize unlimited dimension if needed but no variables
+                # resize unlimited dimension if needed and all connected variables
+                # this is not in lign with `netcdf4-python` which only resizes
+                # the dimension and this variable
                 if self._parent._current_dim_sizes[dim] < new_max:
                     self._parent.resize_dimension(dim, new_max)
                 new_shape += (new_max,)
