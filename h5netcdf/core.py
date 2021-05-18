@@ -250,7 +250,7 @@ class BaseVariable(object):
         from .legacyapi import Dataset
 
         # resize on write only for legacy API
-        if isinstance(self._parent, Dataset):
+        if isinstance(self._parent._root, Dataset):
             self._maybe_resize_dimensions(key, value)
         self._h5ds[key] = value
 

@@ -1140,7 +1140,8 @@ def test_nc4_non_coord(tmp_local_netcdf):
 
 
 def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
-    with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as f:
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
+        f = ds.createGroup("test")
         f.createDimension("x", None)
         f.createDimension("y", 3)
 
@@ -1155,17 +1156,19 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
 
         # don't mask, since h5netcdf doesn't do masking
         if netcdf_write_module == netCDF4:
-            f.set_auto_mask(False)
+            ds.set_auto_mask(False)
 
         res1 = dummy1[:]
         res2 = dummy2[:]
         res3 = dummy3[:]
         res4 = dummy4[:]
 
-    with netCDF4.Dataset(tmp_local_netcdf, "r") as f:
+    with netCDF4.Dataset(tmp_local_netcdf, "r") as ds:
         # don't mask, since h5netcdf doesn't do masking
         if netcdf_write_module == netCDF4:
-            f.set_auto_mask(False)
+            ds.set_auto_mask(False)
+
+        f = ds["test"]
 
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
@@ -1176,7 +1179,8 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
         np.testing.assert_allclose(f.variables["dummy4"][:], res4)
         assert f.variables["dummy4"].shape == (3, 3)
 
-    with legacyapi.Dataset(tmp_local_netcdf, "r") as f:
+    with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
+        f = ds["test"]
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
         assert f.variables["dummy1"]._h5ds.shape == (3, 3)
@@ -1190,7 +1194,8 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
         assert f.variables["dummy4"].shape == (3, 3)
         assert f.variables["dummy4"]._h5ds.shape == (0, 3)
 
-    with h5netcdf.File(tmp_local_netcdf, "r") as f:
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        f = ds["test"]
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
         assert f.variables["dummy1"]._h5ds.shape == (3, 3)
