@@ -145,14 +145,6 @@ def create_netcdf_example_group(ds, idx):
     data[:] = 12.
     collide[...] = np.arange(5 + idx)
     sample[0:2, :2] = np.ones((2, 2))
-    #assert g["sample"].shape == (2, 2 + idx)
-    #time[:] = np.arange(10 + idx)
-    print("create-------------------------")
-    print("time-shape:", g["time"].shape)
-    #print("time-data:", g["time"][:])
-    print("data-shape:", g["data"].shape)
-    #print("data-data:", g["data"][:])
-    print("sample-shape:", g["sample"].shape)
     ship[0, :] = "Skiff"
 
 
@@ -178,13 +170,7 @@ def create_h5netcdf_example_group(ds, idx):
 
     g.variables["collide"][...] = np.arange(5 + idx)
     g.variables["sample"][0:2, :2] = np.ones((2, 2))
-    #g.variables["time"][:] = np.arange(10 + idx)
-    print("create-------------------------")
-    print("time-shape:", g["time"].shape)
-    print("data-shape:", g["data"].shape)
-    print("sample-shape:", g["sample"].shape)
     g.variables["ship"][0, :] = "Skiff"
-
 
 
 def check_netcdf_group(tmp_netcdf):
@@ -193,7 +179,6 @@ def check_netcdf_group(tmp_netcdf):
             g = ds.groups[grp]
             assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
                                          'sample'}
-            #assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
             assert g.dimensions["time"].isunlimited()
             assert g.dimensions["time"].size == 10 + i
             assert not g.dimensions["nvec"].isunlimited()
@@ -208,14 +193,9 @@ def check_netcdf_group(tmp_netcdf):
             assert g.dimensions["collide"].size == 5 + i
 
             assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
-            #assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("cchecking-------------------------")
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
-
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -226,7 +206,6 @@ def check_legacyapi_group(tmp_netcdf):
             g = ds.groups[grp]
             assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
                                          'sample'}
-            #assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
             assert g.dimensions["time"] is None
             assert g._current_dim_sizes["time"] == 10 + i
             assert g.dimensions["nvec"] == 5 + i
@@ -236,13 +215,9 @@ def check_legacyapi_group(tmp_netcdf):
             assert g.dimensions["collide"] == 5 + i
 
             assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
-            #assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("cchecking-------------------------")
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -253,7 +228,6 @@ def check_h5netcdf_group(tmp_netcdf):
             g = ds.groups[grp]
             assert set(g.dimensions) == {'collide', 'ship_strlen', 'time', 'nvec', 'ship',
                                          'sample'}
-            #assert set(g.dimensions) == {'collide', 'time', 'nvec', 'ship', 'sample'}
             assert g.dimensions["time"] is None
             assert g._current_dim_sizes["time"] == 10 + i
             assert g.dimensions["nvec"] == 5 + i
@@ -263,13 +237,9 @@ def check_h5netcdf_group(tmp_netcdf):
             assert g.dimensions["collide"] == 5 + i
 
             assert set(g.variables) == {'data', 'collide', 'ship', 'time', 'sample'}
-            #assert set(g.variables) == {'data', 'collide', 'time', 'sample'}
             assert g.variables["time"].shape == (10 + i,)
-            print("cchecking-------------------------")
-            print("data.shape:", g.variables["data"].shape)
             assert g.variables["data"].shape == (3 + i, 2 + i, 10 + i, 5 + i,)
             assert g.variables["collide"].shape == (5 + i,)
-            print("sample.shape:", g.variables["sample"].shape)
             assert g.variables["sample"].shape == (10 + i, 2 + i,)
             assert g.variables["ship"].shape == (3 + i, 10 + i,)
 
@@ -615,6 +585,8 @@ def test_dimensions(tmp_local_netcdf, read_write_matrix):
 
 
 def test_compare_legacyapi_netCDF4(tmp_local_netcdf):
+    # this needs to be extended to make use of h5diff
+    # or just be removed
     f0 = tmp_local_netcdf[:-3] + "0.nc"
     f1 = tmp_local_netcdf[:-3] + "1.nc"
     f2 = tmp_local_netcdf[:-3] + "2.nc"
@@ -622,9 +594,6 @@ def test_compare_legacyapi_netCDF4(tmp_local_netcdf):
     write_legacy_netcdf(f1, netCDF4)
     write_h5netcdf(f2)
     import subprocess
-    #print(f0)
-    #print(f1)
-    #print(f2)
     diff1 = subprocess.run(["h5diff", "-c", f0, f1], capture_output=True, check=False)
     diff2 = subprocess.run(["h5diff", "-c", f0, f2], capture_output=True, check=False)
     diff3 = subprocess.run(["h5diff", "-c", f1, f2], capture_output=True, check=False)
@@ -1141,6 +1110,73 @@ def test_invalid_then_valid_no_ncproperties(tmp_local_or_remote_netcdf):
         assert "_NCProperties" not in f.attrs
 
 
+def test_variable_attach_dim_scales(tmp_local_or_remote_netcdf):
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
+        f.dimensions["x"] = None
+        f.dimensions["y"] = 15
+        # create variable with attached dimension scales
+        f.create_variable("dummy", dimensions=("x", "y"), dtype=np.int64,
+                          data=None, fillvalue=None)
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None) is not None
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None).shape == (2,)
+
+        # detach first scale: results in empty DIMENSION_LIST entry
+        refs = f._get_dim_scale_refs('x')
+        f._detach_dim_scale('x', refs)
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None) is not None
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None).shape == (2,)
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None)[0].any() is False
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None)[1].any()
+
+        # detach second scale: results in complete removal of DIMENSION_LIST
+        refs = f._get_dim_scale_refs('y')
+        f._detach_dim_scale('y', refs)
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None) is None
+
+        # attach one dim scale by name, second dimension get's empty entry
+        f["dummy"]._attach_dim_scale("x")
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None) is not None
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None).shape == (2,)
+        assert f["dummy"]._h5ds.attrs.get("DIMENSION_LIST", None)[1].any() is False
+
+
+def test_group_dimension_scales(tmp_local_or_remote_netcdf):
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
+        # create dimensions (and dimension scales)
+        f.dimensions["x"] = None
+        f.dimensions["y"] = 15
+
+        assert f._h5group["x"].attrs.get("CLASS", None) == b"DIMENSION_SCALE"
+        assert f._h5group["x"].attrs.get("NAME", None) == NOT_A_VARIABLE + bytes(f"{0:10}", "ascii")
+
+        assert f._h5group["y"].attrs.get("CLASS", None) == b"DIMENSION_SCALE"
+        assert f._h5group["y"].attrs.get("NAME", None) == NOT_A_VARIABLE + bytes(f"{15:10}", "ascii")
+
+        # delete x-scale (completely remove hdf5 dataset)
+        f._delete_dim_scale("x")
+
+        assert "x" not in f._h5group
+        assert f._h5group["y"].attrs.get("CLASS", None) == b"DIMENSION_SCALE"
+        assert f._h5group["y"].attrs.get("NAME", None) == NOT_A_VARIABLE + bytes(f"{15:10}", "ascii")
+
+        # delete y-scale (completely remove hdf5 dataset)
+        f._delete_dim_scale("y")
+
+        assert "x" not in f._h5group
+        assert "y" not in f._h5group
+
+        # re-create dimension and scales
+        f._create_dim_scale("x")
+        f._create_dim_scale("y")
+        assert f._h5group["x"].attrs.get("CLASS", None) == b"DIMENSION_SCALE"
+        assert f._h5group["x"].attrs.get("NAME", None) == NOT_A_VARIABLE + bytes(
+            f"{0:10}", "ascii")
+
+        assert f._h5group["y"].attrs.get("CLASS", None) == b"DIMENSION_SCALE"
+        assert f._h5group["y"].attrs.get("NAME", None) == NOT_A_VARIABLE + bytes(
+            f"{15:10}", "ascii")
+
+
 def test_creating_and_resizing_unlimited_dimensions(tmp_local_or_remote_netcdf):
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         f.dimensions["x"] = None
@@ -1266,6 +1302,91 @@ def test_writing_to_an_unlimited_dimension(tmp_local_or_remote_netcdf):
         # broadcast writing
         f.variables["dummy3"][...] = [[1, 2, 3]]
         np.testing.assert_allclose(f.variables["dummy3"], [[1, 2, 3], [1, 2, 3]])
+
+
+def test_writing_to_an_unlimited_dimension_2(tmp_local_or_remote_netcdf):
+    with legacyapi.Dataset(tmp_local_or_remote_netcdf) as f:
+        # Two dimensions, only one is unlimited.
+        f.createDimension("x", 0)
+        f.createDimension("y", 3)
+
+        # Without data.
+        f.createVariable("dummy1", "i8", ("x", "y",))
+        f.createVariable("dummy2", "i8", ("x", "y",))
+        f.createVariable("dummy3", "i8", ("x", "y",))
+        g = f.createGroup("test")
+        g.createVariable("dummy4", "i8", ("y", "x", "x",))
+        g.createVariable("dummy5", "i8", ("y", "y",))
+
+        assert f.variables["dummy1"].shape == (0, 3)
+        assert f.variables["dummy2"].shape == (0, 3)
+        assert f.variables["dummy3"].shape == (0, 3)
+        assert g.variables["dummy4"].shape == (3, 0, 0)
+        assert g.variables["dummy5"].shape == (3, 3)
+
+        # variables and their unlimited dimensions are resized on the fly
+        f.variables["dummy2"][:] = [[1, 2, 3], [5, 6, 7]]
+        np.testing.assert_allclose(f.variables["dummy2"], [[1, 2, 3], [5, 6, 7]])
+
+        f.variables["dummy3"][...] = [[1, 2, 3], [5, 6, 7]]
+        np.testing.assert_allclose(f.variables["dummy3"], [[1, 2, 3], [5, 6, 7]])
+
+        # other variables are not affected on disk,
+        # but are reported with current dim sizes
+        assert f.variables["dummy1"].shape == (2, 3)
+        assert f.variables["dummy1"]._h5ds.shape == (0, 3)
+        assert f.variables["dummy2"].shape == (2, 3)
+        assert f.variables["dummy3"].shape == (2, 3)
+        assert g.variables["dummy4"].shape == (3, 2, 2)
+        assert g.variables["dummy4"]._h5ds.shape == (3, 0, 0)
+        assert g.variables["dummy5"].shape == (3, 3)
+
+
+def test_resize_dimensions(tmp_local_netcdf):
+    with h5netcdf.File(tmp_local_netcdf) as f:
+        f.dimensions["x"] = None
+        f.dimensions["y"] = 2
+
+        # Creating a variable without data will initialize an array with zero
+        # length.
+        f.create_variable("dummy", dimensions=("x", "y"), dtype=np.int64)
+        assert f.variables["dummy"].shape == (0, 2)
+        assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
+
+        # Resize dimension but no variables
+        # This will only resize the dimension, but variables keep untouched.
+        f.resize_dimension("x", 3, resize_vars=False)
+        assert f.dimensions["x"] is None
+        assert f._current_dim_sizes["x"] == 3
+        assert f.variables["dummy"].shape == (3, 2)
+        assert f.variables["dummy"]._h5ds.shape == (0, 2)
+        assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
+
+        # Creating another variable with no data will now take the shape
+        # of the current dimensions.
+        f.create_variable("dummy3", dimensions=("x", "y"), dtype=np.int64)
+        assert f.variables["dummy3"].shape == (3, 2)
+        assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
+
+        # Writing to a variable with an unlimited dimension
+        # will not resize dimension and variable in new API.
+        # Instead it behaves like h5py (raising or doing nothing)
+        f.variables["dummy"][:] = np.ones((3, 2), dtype=np.int64)
+        assert f.variables["dummy"].shape == (3, 2)
+        assert f.variables["dummy"]._h5ds.shape == (0, 2)
+        assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
+        with pytest.raises(IndexError):
+            f.variables["dummy"][4] = np.ones((1, 2))
+
+        # new API resizing dimensions should be extended to all connected variables
+        f.resize_dimension("x", 5)
+        f.variables["dummy"][:] = np.ones((5, 2), dtype=np.int64)
+        assert f.variables["dummy"].shape == (5, 2)
+        assert f.variables["dummy"]._h5ds.shape == (5, 2)
+        assert f.variables["dummy"]._h5ds.maxshape == (None, 2)
+        assert f.variables["dummy3"].shape == (5, 2)
+        assert f.variables["dummy"]._h5ds.shape == (5, 2)
+        assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
 
 
 def test_c_api_can_read_unlimited_dimensions(tmp_local_netcdf):

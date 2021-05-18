@@ -302,6 +302,7 @@ class BaseVariable(object):
 
     def __setitem__(self, key, value):
         from .legacyapi import Dataset
+
         # resize on write only for legacy API
         if isinstance(self._parent._root, Dataset):
             self._maybe_resize_dimensions(key, value)
