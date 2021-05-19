@@ -11,7 +11,7 @@ import numpy as np
 
 # from .compat import ChainMap, OrderedDict, unicode
 from .attrs import Attributes
-from .dimensions import Dimensions
+from .dimensions import Dimensions, Dimension
 from .utils import Frozen
 
 try:
@@ -257,6 +257,7 @@ def _unlabeled_dimension_mix(h5py_dataset):
 class Group(Mapping):
 
     _variable_cls = Variable
+    _dimension_cls = Dimension
 
     @property
     def _group_cls(self):
@@ -274,7 +275,9 @@ class Group(Mapping):
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
+        self._dimensions = _LazyObjectLookup(self, self._dimension_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
+
 
         # # initialize phony dimension counter
         if self._root._phony_dims_mode is not None:
@@ -289,6 +292,7 @@ class Group(Mapping):
                 self._groups.add(k)
             else:
                 if v.attrs.get("CLASS") == b"DIMENSION_SCALE":
+                    self._dimensions.add(k)
                     dim_id = v.attrs.get("_Netcdf4Dimid")
                     if "_Netcdf4Coordinates" in v.attrs:
                         assert dim_id is not None
@@ -301,7 +305,7 @@ class Group(Mapping):
                         size = None if v.maxshape == (None,) else v.size
                         current_size = v.size
 
-                    self._dim_sizes[k] = size
+                    self._dim_sizes[k] = self.dimensions[k]#ize
 
                     # keep track of found labeled dimensions
                     if self._root._phony_dims_mode is not None:
@@ -316,6 +320,7 @@ class Group(Mapping):
                     )
 
                     self._dim_order[k] = dim_id
+
                 else:
                     if self._root._phony_dims_mode is not None:
                         # check if malformed variable
@@ -326,6 +331,7 @@ class Group(Mapping):
                                 vdims[i] += 1
                             for dimsize, cnt in vdims.items():
                                 phony_dims[dimsize] = max(phony_dims[dimsize], cnt)
+                            #self._dimensions.add(k)
 
                 if not _netcdf_dimension_but_not_variable(v):
                     if isinstance(v, h5_dataset_types):
@@ -341,7 +347,7 @@ class Group(Mapping):
                     grp_phony_count += 1
                     if self._root._phony_dims_mode == "access":
                         name = "phony_dim_{}".format(name)
-                        self._create_dimension(name, size)
+                        self._create_dimension(name, size, phony=True, create=False)
                     self._phony_dims[(size, pcnt)] = name
             # finally increase phony dim count at file level
             self._root._phony_dim_count += grp_phony_count
@@ -354,7 +360,7 @@ class Group(Mapping):
             if isinstance(value, int):
                 value += self._root._labeled_dim_count
                 name = "phony_dim_{}".format(value)
-                self._create_dimension(name, key[0])
+                self._create_dimension(name, key[0], phony=True, create=False)
                 self._phony_dims[key] = name
 
     def _determine_current_dimension_size(self, dim_name, max_size):
@@ -396,15 +402,21 @@ class Group(Mapping):
     def name(self):
         return self._h5group.name
 
-    def _create_dimension(self, name, size=None):
-        if name in self._dim_sizes.maps[0]:
+    def _create_dimension(self, name, size=None, phony=False, create=True):
+        if name in self.dimensions: #self._dim_sizes.maps[0]:
             raise ValueError("dimension %r already exists" % name)
 
-        self._dim_sizes[name] = size
-        self._current_dim_sizes[name] = 0 if size is None else size
+        #self._dim_sizes[name] = size
+        #self._current_dim_sizes[name] = 0 if size is None else size
+        #self._dim_order[name] = None
+        self._dimensions[name] = self._dimension_cls(self, name, size=size,
+                                                     phony=phony, create=create)
+        self._create_dim_scale(name)
+        self._dim_sizes[name] = self.dimensions[name]
+        #self._current_dim_sizes[name] = 0 if size is None else size
         # Increase maximum dimension id (_Netcdf4Dimid)
-        self._root._max_dim_id += 1
-        self._dim_order[name] = self._root._max_dim_id
+        #self._root._max_dim_id += 1
+        #self._dim_order[name] = self._root._max_dim_id
 
     @property
     def dimensions(self):
@@ -447,6 +459,8 @@ class Group(Mapping):
     def _create_child_variable(
         self, name, dimensions, dtype, data, fillvalue, **kwargs
     ):
+
+        print("_create_child_variable:", name)
         stacklevel = 4  # correct if name does not start with '/'
 
         if name in self:
@@ -487,8 +501,10 @@ class Group(Mapping):
         else:
             h5name = name
 
-        shape = tuple(self._current_dim_sizes[d] for d in dimensions)
-        maxshape = tuple(self._dim_sizes[d] for d in dimensions)
+        #shape = tuple(self._current_dim_sizes[d] for d in dimensions)
+        shape = tuple(self._dim_sizes[d].size for d in dimensions)
+        #maxshape = tuple(self._dim_sizes[d] for d in dimensions)
+        maxshape = tuple(self._dim_sizes[d].maxsize for d in dimensions)
 
         # If it is passed directly it will change the default compression
         # settings.
@@ -497,9 +513,11 @@ class Group(Mapping):
 
         # Clear dummy HDF5 datasets with this name that were created for a
         # dimension scale without a corresponding variable.
+        dimid = None
         if name in self.dimensions and name in self._h5group:
             h5ds = self._h5group[name]
             if _netcdf_dimension_but_not_variable(h5ds):
+                dimid = self.dimensions[name].dimid
                 self._detach_dim_scale(name)
                 del self._h5group[name]
 
@@ -509,6 +527,9 @@ class Group(Mapping):
 
         self._variables[h5name] = self._variable_cls(self, h5name, dimensions)
         variable = self._variables[h5name]
+
+        if dimid is not None:
+            variable._h5ds.attrs["_Netcdf4Dimid"] = np.int32(dimid)
 
         if fillvalue is not None:
             value = variable.dtype.type(fillvalue)
@@ -553,6 +574,41 @@ class Group(Mapping):
 
     def __len__(self):
         return len(self.variables) + len(self.groups)
+
+    def _create_dim_scale(self, dim):
+        """Create all necessary HDF5 dimension scale."""
+        dimlen = bytes(f"{self.dimensions[dim].size:10}", "ascii")
+        scale_name = (
+            dim
+            if dim in self._variables and dim in self._h5group
+            else NOT_A_VARIABLE + dimlen
+        )
+        if dim not in self._h5group:
+            size = self.dimensions[dim].size
+            kwargs = {}
+            if self.dimensions[dim].maxsize is None:
+                kwargs["maxshape"] = (None,)
+            self._h5group.create_dataset(
+                name=dim, shape=(size,), dtype=">f4", **kwargs
+            )
+
+        h5ds = self._h5group[dim]
+        self._parent._root._max_dim_id += 1
+        h5ds.attrs["_Netcdf4Dimid"] = np.int32(self._parent._root._max_dim_id)
+
+        # if len(h5ds.shape) > 1:
+        #     dims = self._variables[dim].dimensions
+        #     coord_ids = np.array([dim_order[d] for d in dims], "int32")
+        #     h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
+
+        # TODO: don't re-create scales if they already exist. With the
+        # current version of h5py, this would require using the low-level
+        # h5py.h5ds.is_scale interface to detect pre-existing scales.
+        if not h5py.h5ds.is_scale(h5ds.id):
+            if h5py.__version__ < LooseVersion("2.10.0"):
+                h5ds.dims.create_scale(h5ds, scale_name)
+            else:
+                h5ds.make_scale(scale_name)
 
     def _create_dim_scales(self):
         """Create all necessary HDF5 dimension scale."""
@@ -607,7 +663,8 @@ class Group(Mapping):
         for var in self.variables.values():
             for n, dim in enumerate(var.dimensions):
                 if dim == name:
-                    var._h5ds.dims[n].detach_scale(self._all_h5groups[dim])
+                    if h5py.h5ds.is_attached(var._h5ds.id, self._all_h5groups[dim].id, n):
+                        var._h5ds.dims[n].detach_scale(self._all_h5groups[dim])
 
         for subgroup in self.groups.values():
             if dim not in subgroup._h5group:
@@ -629,6 +686,10 @@ class Group(Mapping):
     @property
     def variables(self):
         return Frozen(self._variables)
+
+    @property
+    def dims(self):
+        return Frozen(self._dimensions)
 
     @property
     def attrs(self):
@@ -870,7 +931,7 @@ class File(Group):
 
     def flush(self):
         if "r" not in self._mode:
-            self._create_dim_scales()
+            #self._create_dim_scales()
             self._attach_dim_scales()
             if not self._preexisting_file and self._write_ncproperties:
                 self.attrs._h5attrs["_NCProperties"] = np.array(
