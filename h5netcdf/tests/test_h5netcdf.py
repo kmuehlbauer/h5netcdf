@@ -407,7 +407,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert list(v.attrs) == []
 
     assert ds["/subgroup/y_var"].shape == (10,)
-    assert ds["/subgroup"].dimensions["y"] == 10
+    assert ds["/subgroup"].dimensions["y"].size == 10
 
     ds.close()
 
@@ -467,7 +467,7 @@ def test_fileobj(decode_vlen_strings):
 
 def test_repr(tmp_local_or_remote_netcdf):
     write_h5netcdf(tmp_local_or_remote_netcdf)
-    f = h5netcdf.File(tmp_local_or_remote_netcdf, "r")
+    f = h5netcdf.File(tmp_local_or_remote_netcdf, "a")
     assert "h5netcdf.File" in repr(f)
     assert "subgroup" in repr(f)
     assert "foo" in repr(f)
@@ -478,7 +478,7 @@ def test_repr(tmp_local_or_remote_netcdf):
 
     d = f.dimensions
     assert "h5netcdf.Dimensions" in repr(d)
-    assert "x=4" in repr(d)
+    assert "x=<h5netcdf.Dimension '/x': size 4>" in repr(d)
 
     g = f["subgroup"]
     assert "h5netcdf.Group" in repr(g)
@@ -490,9 +490,9 @@ def test_repr(tmp_local_or_remote_netcdf):
     assert "units" in repr(v)
 
     f.dimensions["temp"] = None
-    assert "temp: Unlimited (current: 0)" in repr(f)
+    assert "temp: <h5netcdf.Dimension '/temp': size 0 (unlimited)>" in repr(f)
     f.resize_dimension("temp", 5)
-    assert "temp: Unlimited (current: 5)" in repr(f)
+    assert "temp: <h5netcdf.Dimension '/temp': size 5 (unlimited)>" in repr(f)
 
     f.close()
 
@@ -536,7 +536,9 @@ def test_optional_netcdf4_attrs(tmp_local_or_remote_netcdf):
         f["foo"].dims[1].attach_scale(f["y"])
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
         assert ds["foo"].dimensions == ("x", "y")
-        assert ds.dimensions == {"x": 5, "y": 10}
+        assert ds.dimensions.keys() == {"x", "y"}
+        assert ds.dimensions["x"].size == 5
+        assert ds.dimensions["y"].size == 10
         assert array_equal(ds["foo"], foo_data)
 
 
@@ -630,21 +632,17 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
                 fx.create_dataset(k, data=np.arange(v))
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
-        i = len(grps) - 1
-        for grp in grps[::-1]:
+        for i, grp in enumerate(grps):
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
-            i -= 1
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
-        for i, grp in enumerate(grps[::-1]):
-            print(dsr[grp])
+        for i, grp in enumerate(grps):
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
 
     with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
         for i, grp in enumerate(grps):
-            print(dsr[grp])
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
 
@@ -949,8 +947,8 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
         assert f.variables["dummy"].shape == (0, 2)
         f.resize_dimension("x", 3)
         # This will also force a resize of the existing variables and it will
-        # be padded with zeros..
-        assert f._current_dim_sizes["x"] == 3
+        # be padded with zeros.
+        assert f.dimensions["x"].size == 3
         np.testing.assert_allclose(f.variables["dummy"], np.zeros((3, 2)))
 
         # Creating another variable with no data will now also take the shape
@@ -967,17 +965,18 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
         assert f.variables["dummy3"].shape == (3, 2)
         assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
         assert f["x"].shape == (3,)
-        assert f._current_dim_sizes["x"] == 3
+        assert f.dimensions["x"].size == 3
         np.testing.assert_allclose(f.variables["dummy3"], np.zeros((3, 2)))
 
     # Close and read again to also test correct parsing of unlimited
     # dimensions.
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as f:
-        assert f.dimensions["x"] is None
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["x"].size == 3
         assert f._h5file["x"].maxshape == (None,)
         assert f._h5file["x"].shape == (3,)
 
-        assert f.dimensions["y"] == 2
+        assert f.dimensions["y"].size == 2
         assert f._h5file["y"].maxshape == (2,)
         assert f._h5file["y"].shape == (2,)
 
@@ -1069,18 +1068,21 @@ def test_reading_unlimited_dimensions_created_with_c_api(tmp_local_netcdf):
         # Assign something to trigger a resize.
         dummy1[:] = [[1, 2, 3], [4, 5, 6]]
 
+        # Create another variable with same dimensions
+        f.createVariable("dummy5", float, ("x", "y"))
+
     with h5netcdf.File(tmp_local_netcdf, "r") as f:
-        assert f.dimensions["x"] is None
-        assert f.dimensions["y"] == 3
-        assert f.dimensions["z"] is None
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["y"].size == 3
+        assert f.dimensions["z"].isunlimited()
 
         # This is parsed correctly due to h5netcdf's init trickery.
-        assert f._current_dim_sizes["x"] == 2
-        assert f._current_dim_sizes["y"] == 3
-        assert f._current_dim_sizes["z"] == 0
+        assert f.dimensions["x"].size == 2
+        assert f.dimensions["y"].size == 3
+        assert f.dimensions["z"].size == 0
 
         # But the actual data-set and arrays are not correct.
-        assert f["dummy1"].shape == (2, 3)
+        # assert f["dummy1"].shape == (2, 3)
         # XXX: This array has some data with dimension x - netcdf does not
         # appear to keep dimensions consistent.
         # With https://github.com/h5netcdf/h5netcdf/pull/103 h5netcdf will
@@ -1095,7 +1097,8 @@ def test_reading_unused_unlimited_dimension(tmp_local_or_remote_netcdf):
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         f.dimensions = {"x": None}
         f.resize_dimension("x", 5)
-        assert f.dimensions == {"x": None}
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["x"].size == 5
 
 
 def test_reading_special_datatype_created_with_c_api(tmp_local_netcdf):
@@ -1118,7 +1121,10 @@ def test_nc4_non_coord(tmp_local_netcdf):
         f.create_variable("y", dimensions=("x",), dtype=np.int64)
 
     with h5netcdf.File(tmp_local_netcdf, "r") as f:
-        assert f.dimensions == {"x": None, "y": 2}
+        assert list(f.dimensions) == ["x", "y"]
+        assert f.dimensions["x"].size == 0
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["y"].size == 2
         assert list(f.variables) == ["test", "y"]
         assert list(f._h5group.keys()) == ["x", "y", "test", "_nc4_non_coord_y"]
 
@@ -1208,8 +1214,6 @@ def test_detach_scale(tmp_local_netcdf):
 
     with h5netcdf.File(tmp_local_netcdf, "a") as ds:
         ds.create_variable("test", dimensions=("x",), dtype=np.int64)
-        # this forces detach and re-creation
-        ds.create_variable("x", dimensions=("y",), dtype=np.int64)
 
     with h5netcdf.File(tmp_local_netcdf, "r") as ds:
         refs = ds._h5group["x"].attrs.get("REFERENCE_LIST", False)
@@ -1218,21 +1222,19 @@ def test_detach_scale(tmp_local_netcdf):
             assert dim == 0
             assert ds._root._h5file[ref].name == name
 
+    with h5netcdf.File(tmp_local_netcdf, "a") as ds:
+        ds.dimensions["x"].detach_scale()
 
-def test_is_dimscale(tmp_local_netcdf):
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        refs = ds._h5group["x"].attrs.get("REFERENCE_LIST", False)
+        assert not refs
+
+
+def test_is_scale(tmp_local_netcdf):
     with legacyapi.Dataset(tmp_local_netcdf, "w") as ds:
         ds.createDimension("x", 10)
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
-        assert ds._is_dimscale("x")
-
-
-def test_delete_dim_scale(tmp_local_netcdf):
-    with legacyapi.Dataset(tmp_local_netcdf, "w") as ds:
-        ds.createDimension("x", 10)
-    with legacyapi.Dataset(tmp_local_netcdf, "r+") as ds:
-        assert ds._is_dimscale("x")
-        ds._delete_dim_scale("x")
-        assert not ds._is_dimscale("x")
+        assert ds.dimensions["x"].is_scale
 
 
 def test_get_dim_scale_refs(tmp_local_netcdf):
@@ -1241,7 +1243,7 @@ def test_get_dim_scale_refs(tmp_local_netcdf):
         ds.createVariable("test0", "i8", ("x",))
         ds.createVariable("test1", "i8", ("x",))
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
-        refs = ds._get_dim_scale_refs("x")
+        refs = ds.dimensions["x"].scale_refs
         assert ds._h5file[refs[0][0]] == ds["test0"]._h5ds
         assert ds._h5file[refs[1][0]] == ds["test1"]._h5ds
 
@@ -1324,18 +1326,18 @@ def check_netcdf_dimensions(tmp_netcdf, write_module, read_module):
                 "sample",
             }
             if read_module in [legacyapi, h5netcdf]:
-                assert g.dimensions["time"] is None
-                assert g._current_dim_sizes["time"] == 10 + i
-                assert g.dimensions["nvec"] is not None
-                assert g.dimensions["nvec"] == 5 + i
-                assert g.dimensions["sample"] is not None
-                assert g.dimensions["sample"] == 2 + i
-                assert g.dimensions["collide"] is not None
-                assert g.dimensions["collide"] == 7 + i
-                assert g.dimensions["ship"] is not None
-                assert g.dimensions["ship"] == 3 + i
-                assert g.dimensions["ship_strlen"] is not None
-                assert g.dimensions["ship_strlen"] == 10
+                assert g.dimensions["time"].isunlimited()
+                assert g.dimensions["time"].size == 10 + i
+                assert not g.dimensions["nvec"].isunlimited()
+                assert g.dimensions["nvec"].size == 5 + i
+                assert not g.dimensions["sample"].isunlimited()
+                assert g.dimensions["sample"].size == 2 + i
+                assert not g.dimensions["collide"].isunlimited()
+                assert g.dimensions["collide"].size == 7 + i
+                assert not g.dimensions["ship"].isunlimited()
+                assert g.dimensions["ship"].size == 3 + i
+                assert not g.dimensions["ship_strlen"].isunlimited()
+                assert g.dimensions["ship_strlen"].size == 10
             else:
                 assert g.dimensions["time"].isunlimited()
                 assert g.dimensions["time"].size == 10 + i
@@ -1411,7 +1413,10 @@ def test_no_circular_references(tmp_local_netcdf):
 
     gc.collect()
     with h5netcdf.File(tmp_local_netcdf, "r") as ds:
-        assert len(gc.get_referrers(ds)) == 1
+        refs = gc.get_referrers(ds)
+        for ref in refs:
+            print(ref)
+        assert len(refs) == 1
 
 
 def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
