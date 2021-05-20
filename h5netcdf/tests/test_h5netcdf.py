@@ -1111,3 +1111,25 @@ def test_nc4_non_coord(tmp_local_netcdf):
         assert f.dimensions == {"x": None, "y": 2}
         assert list(f.variables) == ["y", "test"]
         assert list(f._h5group.keys()) == ["_nc4_non_coord_y", "test", "x", "y"]
+
+
+def test_scales_on_append(tmp_local_netcdf):
+    # create file with _NCProperties attribute
+    with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("x", 10)
+
+    # append file with netCDF4
+    with netCDF4.Dataset(tmp_local_netcdf, "r+") as ds:
+        ds.createVariable("test", "i4", ("x",))
+
+    # check scales
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        assert ds.variables["test"].attrs._h5attrs.get("DIMENSION_LIST", False)
+
+    # append file with legacyapi
+    with legacyapi.Dataset(tmp_local_netcdf, "r+") as ds:
+        ds.createVariable("test1", "i4", ("x",) )
+
+    # check scales
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        assert ds.variables["test1"].attrs._h5attrs.get("DIMENSION_LIST", False)

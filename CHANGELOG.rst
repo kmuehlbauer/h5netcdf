@@ -7,6 +7,8 @@ Development Version:
   By `Ryan Grout <https://github.com/groutr>`_.
 - Moved handling of ``_nc4_non_coord_`` to ``h5netcdf.BaseVariable``.
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
+- Create/Attach dimension scales on append (``mode="r+"``)
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 
 Version 0.11.0 (April 20, 2021):
 
