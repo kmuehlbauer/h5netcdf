@@ -1128,7 +1128,7 @@ def test_scales_on_append(tmp_local_netcdf):
 
     # append file with legacyapi
     with legacyapi.Dataset(tmp_local_netcdf, "r+") as ds:
-        ds.createVariable("test1", "i4", ("x",) )
+        ds.createVariable("test1", "i4", ("x",))
 
     # check scales
     with h5netcdf.File(tmp_local_netcdf, "r") as ds:
