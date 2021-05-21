@@ -836,28 +836,6 @@ def test_create_variable_matching_saved_dimension(tmp_local_or_remote_netcdf):
         assert f["y"].dims[0].keys() == ["x"]
 
 
-def test_invalid_netcdf_warns(tmp_local_or_remote_netcdf):
-    if tmp_local_or_remote_netcdf.startswith(remote_h5):
-        pytest.skip("h5pyd does not support NumPy complex dtype yet")
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
-        # valid
-        with pytest.warns(None) as record:
-            f.create_variable(
-                "lzf_compressed", data=[1], dimensions=("x"), compression="lzf"
-            )
-        assert not record.list
-        # invalid
-        with pytest.warns(FutureWarning):
-            f.create_variable("complex", data=1j)
-        with pytest.warns(FutureWarning):
-            f.attrs["complex_attr"] = 1j
-        with pytest.warns(FutureWarning):
-            f.create_variable("scaleoffset", data=[1], dimensions=("x",), scaleoffset=0)
-    h5 = get_hdf5_module(tmp_local_or_remote_netcdf)
-    with h5.File(tmp_local_or_remote_netcdf, "r") as f:
-        assert "_NCProperties" not in f.attrs
-
-
 def test_invalid_netcdf_error(tmp_local_or_remote_netcdf):
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w", invalid_netcdf=False) as f:
         # valid
@@ -1113,8 +1091,33 @@ def test_nc4_non_coord(tmp_local_netcdf):
         assert list(f._h5group.keys()) == ["_nc4_non_coord_y", "test", "x", "y"]
 
 
-def test_scales_on_append(tmp_local_netcdf):
+def test_overwrite_existing_file(tmp_local_netcdf):
     # create file with _NCProperties attribute
+    with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("x", 10)
+
+    # check attribute
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        assert ds.attrs._h5attrs.get("_NCProperties", False)
+
+    # overwrite file with legacyapi
+    with legacyapi.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("x", 10)
+
+    # check attribute
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        assert ds.attrs._h5attrs.get("_NCProperties", False)
+
+    # overwrite file with new api
+    with h5netcdf.File(tmp_local_netcdf, "w") as ds:
+        ds.dimensions["x"] = 10
+
+    # check attribute
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
+        assert ds.attrs._h5attrs.get("_NCProperties", False)
+
+
+def test_scales_on_append(tmp_local_netcdf):
     with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
         ds.createDimension("x", 10)
 
