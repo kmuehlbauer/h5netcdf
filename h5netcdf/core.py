@@ -819,8 +819,6 @@ class File(Group):
             _invalid_netcdf_feature(
                 "{} dtypes".format(description),
                 self.invalid_netcdf,
-                # file=self,
-                # stacklevel=stacklevel + 1,
             )
 
     @property
