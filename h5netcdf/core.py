@@ -10,7 +10,7 @@ import h5py
 import numpy as np
 
 from .attrs import Attributes
-from .dimensions import Dimensions
+from .dimensions import Dimension, Dimensions
 from .utils import Frozen
 
 try:
@@ -247,6 +247,8 @@ def _unlabeled_dimension_mix(h5py_dataset):
 class Group(Mapping):
 
     _variable_cls = Variable
+    _dimension_cls = Dimension
+
 
     @property
     def _group_cls(self):
@@ -264,6 +266,7 @@ class Group(Mapping):
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
+        self._dimensions = _LazyObjectLookup(self, self._dimension_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
         # # initialize phony dimension counter
@@ -279,6 +282,7 @@ class Group(Mapping):
                 self._groups.add(k)
             else:
                 if v.attrs.get("CLASS") == b"DIMENSION_SCALE":
+                    self._dimensions.add(k)
                     dim_id = v.attrs.get("_Netcdf4Dimid")
                     if "_Netcdf4Coordinates" in v.attrs:
                         assert dim_id is not None
@@ -291,6 +295,7 @@ class Group(Mapping):
                         size = None if v.maxshape == (None,) else v.size
                         current_size = v.size
 
+                    # todo:
                     self._dim_sizes[k] = size
 
                     # keep track of found labeled dimensions
@@ -392,6 +397,7 @@ class Group(Mapping):
 
         self._dim_sizes[name] = size
         self._current_dim_sizes[name] = 0 if size is None else size
+        self._dimensions[name] = self._dimension_cls(self, name, size=size)
         # Increase maximum dimension id (_Netcdf4Dimid)
         self._root._max_dim_id += 1
         self._dim_order[name] = self._root._max_dim_id
@@ -537,6 +543,41 @@ class Group(Mapping):
 
     def __len__(self):
         return len(self.variables) + len(self.groups)
+
+    def _create_dim_scale(self, dim):
+        """Create all necessary HDF5 dimension scale."""
+        dimlen = bytes(f"{self.dimensions[dim].size:10}", "ascii")
+        scale_name = (
+            dim
+            if dim in self._variables and dim in self._h5group
+            else NOT_A_VARIABLE + dimlen
+        )
+        if dim not in self._h5group:
+            size = self.dimensions[dim].size
+            kwargs = {}
+            if self.dimensions[dim].maxsize is None:
+                kwargs["maxshape"] = (None,)
+            self._h5group.create_dataset(
+                name=dim, shape=(size,), dtype=">f4", **kwargs
+            )
+
+        h5ds = self._h5group[dim]
+        self._parent._root._max_dim_id += 1
+        h5ds.attrs["_Netcdf4Dimid"] = np.int32(self._parent._root._max_dim_id)
+
+        # if len(h5ds.shape) > 1:
+        #     dims = self._variables[dim].dimensions
+        #     coord_ids = np.array([dim_order[d] for d in dims], "int32")
+        #     h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
+
+        # TODO: don't re-create scales if they already exist. With the
+        # current version of h5py, this would require using the low-level
+        # h5py.h5ds.is_scale interface to detect pre-existing scales.
+        if not h5py.h5ds.is_scale(h5ds.id):
+            if h5py.__version__ < LooseVersion("2.10.0"):
+                h5ds.dims.create_scale(h5ds, scale_name)
+            else:
+                h5ds.make_scale(scale_name)
 
     def _create_dim_scales(self):
         """Create all necessary HDF5 dimension scale."""
