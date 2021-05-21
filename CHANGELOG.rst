@@ -7,6 +7,12 @@ Development Version:
   By `Ryan Grout <https://github.com/groutr>`_.
 - Moved handling of ``_nc4_non_coord_`` to ``h5netcdf.BaseVariable``.
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
+- Switch warning into error when using invalid netCDF features.
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
+- Write ``_NCProperties`` when overwriting existing files.
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
+- Create/Attach dimension scales on append (``mode="r+"``)
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 - Create/Attach/Detach dimension scales only if necessary.
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 
