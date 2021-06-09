@@ -863,7 +863,7 @@ class File(Group):
         return None
 
     def flush(self):
-        if self._mode != "r":
+        if self._writable:
             self._create_dim_scales()
             self._attach_dim_scales()
             if not self._preexisting_file and not self.invalid_netcdf:
