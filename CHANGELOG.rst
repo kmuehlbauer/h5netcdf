@@ -15,6 +15,8 @@ Development Version:
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 - Switch warning into error when using invalid netCDF features.
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
+- Assign dimensions at creation time, instead of at sync/flush (file-close).
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 
 Version 0.11.0 (April 20, 2021):
 
