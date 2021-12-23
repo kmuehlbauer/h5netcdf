@@ -11,7 +11,8 @@ Development Version:
   by the netcdf4 standard. This enables files created by h5netcdf to be
   appended to by netCDF4 library users. (Closes Issue #128)
   By: `Mark Harfouche <https://github.com/hmaarrfk>`
-
+- Resize Dimensions when writing to variables (legacy API only), return padded arrays.
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_.
 
 Version 0.12.0 (December 20, 2021):
 
