@@ -1081,21 +1081,17 @@ def test_reading_unlimited_dimensions_created_with_c_api(tmp_local_netcdf):
         assert f.dimensions["z"].isunlimited()
 
         # This is parsed correctly due to h5netcdf's init trickery.
-        #assert f._current_dim_sizes["x"] == 2
-        #assert f._current_dim_sizes["y"] == 3
-        #assert f._current_dim_sizes["z"] == 0
+        assert f._current_dim_sizes["x"] == 2
+        assert f._current_dim_sizes["y"] == 3
+        assert f._current_dim_sizes["z"] == 0
 
         # But the actual data-set and arrays are not correct.
         # assert f["dummy1"].shape == (2, 3)
-        # This will present the shape from the current dimension(s) size
-        # which is 0
-        assert f["dummy1"].shape == (0, 3)
         # XXX: This array has some data with dimension x - netcdf does not
         # appear to keep dimensions consistent.
         # With https://github.com/h5netcdf/h5netcdf/pull/103 h5netcdf will
         # return a padded array
-        # assert f["dummy2"].shape == (3, 2, 2)
-        assert f["dummy2"].shape == (3, 0, 0)
+        assert f["dummy2"].shape == (3, 2, 2)
         f.groups["test"]["dummy3"].shape == (3, 3)
         f.groups["test"]["dummy4"].shape == (0, 0)
 
@@ -1421,7 +1417,10 @@ def test_no_circular_references(tmp_local_netcdf):
 
     gc.collect()
     with h5netcdf.File(tmp_local_netcdf, "r") as ds:
-        assert len(gc.get_referrers(ds)) == 1
+        refs = gc.get_referrers(ds)
+        for ref in refs:
+            print(ref)
+        assert len(refs) == 1
 
 
 def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
