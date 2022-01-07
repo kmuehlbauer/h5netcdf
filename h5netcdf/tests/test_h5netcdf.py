@@ -632,14 +632,12 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
                 fx.create_dataset(k, data=np.arange(v))
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
-        i = len(grps) - 1
-        for grp in grps[::-1]:
+        for i, grp in enumerate(grps):
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
-            i -= 1
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
-        for i, grp in enumerate(grps[::-1]):
+        for i, grp in enumerate(grps):
             print(dsr[grp])
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
@@ -887,6 +885,7 @@ def test_reopen_file_different_dimension_sizes(tmp_local_netcdf):
     with h5netcdf.File(tmp_local_netcdf, "a") as f:
         f.create_variable("/two/foo", data=[1, 2], dimensions=("x",))
     with netCDF4.Dataset(tmp_local_netcdf, "r") as f:
+        print(f.groups)
         assert f.groups["one"].variables["foo"][...].shape == (1,)
 
 

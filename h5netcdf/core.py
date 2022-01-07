@@ -987,41 +987,51 @@ class File(Group):
         # their position, and look-up for HDF5 datasets corresponding to a
         # dimension.
         self._max_dim_id = -1
+        self._labeled_dim_count = 0
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
         super(File, self).__init__(self, self._h5path)
+        # get maximum dimension id
+        if self._writable or phony_dims == "sort":
+            self._max_dim_id = self._get_maximum_dimension_id()
         # initialize all groups to detect/create phony dimensions
         # mimics netcdf-c style naming
         if phony_dims == "sort":
             self._determine_phony_dimensions()
-        # get maximum dimension id
-        if self._writable:
-            self._max_dim_id = self._get_maximum_dimension_id()
+        # # get maximum dimension id
+        # if self._writable:
+        #     self._max_dim_id = self._get_maximum_dimension_id()
 
     def _get_maximum_dimension_id(self):
         dimids = []
 
+        # def _dimids(name, obj):
+        #     dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+
         def _dimids(name, obj):
-            dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
+            if obj.attrs.get("CLASS", None) == b"DIMENSION_SCALE":
+                dimids.append(obj.attrs.get("_Netcdf4Dimid", -1))
 
         self._h5file.visititems(_dimids)
+        self._labeled_dim_count = len(dimids)
+
         return max(dimids) if dimids else -1
 
     def _determine_phony_dimensions(self):
-        def get_labeled_dimension_count(grp):
-            count = len(grp._dim_sizes.maps[0])
-            for name in grp.groups:
-                count += get_labeled_dimension_count(grp[name])
-            return count
+        # def get_labeled_dimension_count(grp):
+        #     count = len(grp._dim_sizes.maps[0])
+        #     for name in grp.groups:
+        #         count += get_labeled_dimension_count(grp[name])
+        #     return count
 
         def create_phony_dimensions(grp):
             grp._create_phony_dimensions()
             for name in grp.groups:
                 create_phony_dimensions(grp[name])
 
-        self._labeled_dim_count = get_labeled_dimension_count(self)
+        #self._labeled_dim_count = get_labeled_dimension_count(self)
         create_phony_dimensions(self)
 
     def _check_valid_netcdf_dtype(self, dtype):
