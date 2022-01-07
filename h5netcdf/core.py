@@ -423,7 +423,7 @@ class Group(Mapping):
                         size = None if v.maxshape == (None,) else v.size
                         current_size = v.size
 
-                    self._dim_sizes[k] = self.dimensions[k]#ize
+                    self._dim_sizes[k] = self.dimensions[k].size
 
                     # keep track of found labeled dimensions
                     if self._root._phony_dims_mode is not None:
@@ -493,7 +493,7 @@ class Group(Mapping):
         Helper method to determine the current size of a dimension.
         """
         # Limited dimension.
-        if self.dimensions[dim_name] is not None:
+        if not self.dimensions[dim_name].isunlimited():
             return max_size
 
         def _find_dim(h5group, dim):
@@ -508,13 +508,12 @@ class Group(Mapping):
 
         root = self._h5group["/"]
 
-        for ref, _ in dim_variable.attrs["REFERENCE_LIST"]:
+        for ref, axis in dim_variable.attrs["REFERENCE_LIST"]:
             var = root[ref]
+            var_d = var.dims[axis]
+            name = _name_from_dimension(var_d)
+            max_size = max(var.shape[axis], max_size)
 
-            for i, var_d in enumerate(var.dims):
-                name = _name_from_dimension(var_d)
-                if name == dim_name:
-                    max_size = max(var.shape[i], max_size)
         return max_size
 
     @property
@@ -531,16 +530,24 @@ class Group(Mapping):
         if name in self.dimensions: #self._dim_sizes.maps[0]:
             raise ValueError("dimension %r already exists" % name)
 
-        #self._dim_sizes[name] = None if size == 0 else size
-        #self._current_dim_sizes[name] = 0 if size is None else size
+        print("LOG:", self._h5group)
+
+        self._dim_sizes[name] = None if size == 0 else size
+        self._current_dim_sizes[name] = 0 if size is None else size
+        self._root._max_dim_id += 1
+        self._dim_order[name] = self._root._max_dim_id
+
         self._dimensions[name] = self._dimension_cls(self, name, size=size,
                                                      phony=phony, create=create)
+        print("LOG:", self._h5group)
+        # Increase maximum dimension id (_Netcdf4Dimid)
+
         #self._create_dim_scale(name)
-        self._dim_sizes[name] = self.dimensions[name]
+        #self._dim_sizes[name] = self.dimensions[name]
         #self._current_dim_sizes[name] = 0 if size is None else size
         # Increase maximum dimension id (_Netcdf4Dimid)
-        self._root._max_dim_id += 1
-        #self._dim_order[name] = self._root._max_dim_id
+        #self._root._max_dim_id += 1
+
         # Create dimension scale only if we have write permission
         if self._root._writable and name not in self._h5group:
             self._create_dim_scale(name)
@@ -597,6 +604,7 @@ class Group(Mapping):
             data = np.asarray(data)
             for d, s in zip(dimensions, data.shape):
                 if d not in self.dimensions:
+                    print("adding dimensions")
                     self.dimensions[d] = s
 
         if dtype is None:
@@ -625,10 +633,10 @@ class Group(Mapping):
         else:
             h5name = name
 
-        #shape = tuple(self._current_dim_sizes[d] for d in dimensions)
-        shape = tuple(self._dim_sizes[d].size for d in dimensions)
-        #maxshape = tuple(self._dim_sizes[d] for d in dimensions)
-        maxshape = tuple(self._dim_sizes[d].maxsize for d in dimensions)
+        shape = tuple(self._current_dim_sizes[d] for d in dimensions)
+        #shape = tuple(self._dim_sizes[d].size for d in dimensions)
+        maxshape = tuple(self._dim_sizes[d] for d in dimensions)
+        #maxshape = tuple(self._dim_sizes[d].maxsize for d in dimensions)
 
         # If it is passed directly it will change the default compression
         # settings.
@@ -642,18 +650,30 @@ class Group(Mapping):
         if h5name in self.dimensions and h5name in self._h5group:
             h5ds = self._h5group[h5name]
             if _netcdf_dimension_but_not_variable(h5ds):
+                print("clearing:", h5name, name)
                 refs = self._get_dim_scale_refs(name)
                 self._delete_dim_scale(name)
 
+        # print(h5name)
+        # print(shape)
+        # print(dtype)
+        # print(data)
+        # print(fillvalue)
+        # for k, v in kwargs.items():
+        #     print(k, type(v), type(v[0]))
         self._h5group.create_dataset(
             h5name, shape, dtype=dtype, data=data, fillvalue=fillvalue, **kwargs
         )
-
+        print("created!")
         self._variables[h5name] = self._variable_cls(self, h5name, dimensions)
         variable = self._variables[h5name]
 
         # Re-create dim-scale and re-attach references to coordinate variable.
+        print("name, h5name", name, h5name)
+        print("name in self.dimensions:", name in self.dimensions)
         if name in self.dimensions and h5name in self._h5group:
+            #self._create_dimension()
+            #self._dimensions.add(name)
             self._create_dim_scale(name)
             if refs is not None:
                 self._attach_dim_scale(name, refs)
@@ -836,7 +856,7 @@ class Group(Mapping):
         It will pad with the underlying HDF5 data sets' fill values (usually
         zero) where necessary.
         """
-        if self.dimensions[dim] is not None:
+        if not self.dimensions[dim].isunlimited():
             raise ValueError(
                 "Dimension '%s' is not unlimited and thus cannot be resized." % dim
             )

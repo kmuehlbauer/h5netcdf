@@ -407,7 +407,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert list(v.attrs) == []
 
     assert ds["/subgroup/y_var"].shape == (10,)
-    assert ds["/subgroup"].dimensions["y"] == 10
+    assert ds["/subgroup"].dimensions["y"].size == 10
 
     ds.close()
 
@@ -467,7 +467,7 @@ def test_fileobj(decode_vlen_strings):
 
 def test_repr(tmp_local_or_remote_netcdf):
     write_h5netcdf(tmp_local_or_remote_netcdf)
-    f = h5netcdf.File(tmp_local_or_remote_netcdf, "r")
+    f = h5netcdf.File(tmp_local_or_remote_netcdf, "a")
     assert "h5netcdf.File" in repr(f)
     assert "subgroup" in repr(f)
     assert "foo" in repr(f)
@@ -478,7 +478,7 @@ def test_repr(tmp_local_or_remote_netcdf):
 
     d = f.dimensions
     assert "h5netcdf.Dimensions" in repr(d)
-    assert "x=4" in repr(d)
+    assert "x=<h5netcdf.Dimension '/x': size 4>" in repr(d)
 
     g = f["subgroup"]
     assert "h5netcdf.Group" in repr(g)
@@ -490,9 +490,9 @@ def test_repr(tmp_local_or_remote_netcdf):
     assert "units" in repr(v)
 
     f.dimensions["temp"] = None
-    assert "temp: Unlimited (current: 0)" in repr(f)
+    assert "temp: <h5netcdf.Dimension '/temp': size 0 (unlimited)>" in repr(f)
     f.resize_dimension("temp", 5)
-    assert "temp: Unlimited (current: 5)" in repr(f)
+    assert "temp: <h5netcdf.Dimension '/temp': size 5 (unlimited)>" in repr(f)
 
     f.close()
 
@@ -536,7 +536,9 @@ def test_optional_netcdf4_attrs(tmp_local_or_remote_netcdf):
         f["foo"].dims[1].attach_scale(f["y"])
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
         assert ds["foo"].dimensions == ("x", "y")
-        assert ds.dimensions == {"x": 5, "y": 10}
+        assert ds.dimensions.keys() == {"x", "y"}
+        assert ds.dimensions["x"].size == 5
+        assert ds.dimensions["y"].size == 10
         assert array_equal(ds["foo"], foo_data)
 
 
@@ -973,11 +975,12 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
     # Close and read again to also test correct parsing of unlimited
     # dimensions.
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as f:
-        assert f.dimensions["x"] is None
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["x"].size == 3
         assert f._h5file["x"].maxshape == (None,)
         assert f._h5file["x"].shape == (3,)
 
-        assert f.dimensions["y"] == 2
+        assert f.dimensions["y"].size == 2
         assert f._h5file["y"].maxshape == (2,)
         assert f._h5file["y"].shape == (2,)
 
@@ -1069,23 +1072,30 @@ def test_reading_unlimited_dimensions_created_with_c_api(tmp_local_netcdf):
         # Assign something to trigger a resize.
         dummy1[:] = [[1, 2, 3], [4, 5, 6]]
 
+        # Create another variable with same dimensions
+        f.createVariable("dummy5", float, ("x", "y"))
+
     with h5netcdf.File(tmp_local_netcdf, "r") as f:
-        assert f.dimensions["x"] is None
-        assert f.dimensions["y"] == 3
-        assert f.dimensions["z"] is None
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["y"].size == 3
+        assert f.dimensions["z"].isunlimited()
 
         # This is parsed correctly due to h5netcdf's init trickery.
-        assert f._current_dim_sizes["x"] == 2
-        assert f._current_dim_sizes["y"] == 3
-        assert f._current_dim_sizes["z"] == 0
+        #assert f._current_dim_sizes["x"] == 2
+        #assert f._current_dim_sizes["y"] == 3
+        #assert f._current_dim_sizes["z"] == 0
 
         # But the actual data-set and arrays are not correct.
-        assert f["dummy1"].shape == (2, 3)
+        # assert f["dummy1"].shape == (2, 3)
+        # This will present the shape from the current dimension(s) size
+        # which is 0
+        assert f["dummy1"].shape == (0, 3)
         # XXX: This array has some data with dimension x - netcdf does not
         # appear to keep dimensions consistent.
         # With https://github.com/h5netcdf/h5netcdf/pull/103 h5netcdf will
         # return a padded array
-        assert f["dummy2"].shape == (3, 2, 2)
+        # assert f["dummy2"].shape == (3, 2, 2)
+        assert f["dummy2"].shape == (3, 0, 0)
         f.groups["test"]["dummy3"].shape == (3, 3)
         f.groups["test"]["dummy4"].shape == (0, 0)
 
@@ -1095,7 +1105,8 @@ def test_reading_unused_unlimited_dimension(tmp_local_or_remote_netcdf):
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
         f.dimensions = {"x": None}
         f.resize_dimension("x", 5)
-        assert f.dimensions == {"x": None}
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["x"].size == 5
 
 
 def test_reading_special_datatype_created_with_c_api(tmp_local_netcdf):
@@ -1114,7 +1125,10 @@ def test_nc4_non_coord(tmp_local_netcdf):
         f.create_variable("y", dimensions=("x",), dtype=np.int64)
 
     with h5netcdf.File(tmp_local_netcdf, "r") as f:
-        assert f.dimensions == {"x": None, "y": 2}
+        assert list(f.dimensions) == ["x", "y"]
+        assert f.dimensions["x"].size == 0
+        assert f.dimensions["x"].isunlimited()
+        assert f.dimensions["y"].size == 2
         assert list(f.variables) == ["y", "test"]
         assert list(f._h5group.keys()) == ["_nc4_non_coord_y", "test", "x", "y"]
 
@@ -1320,18 +1334,18 @@ def check_netcdf_dimensions(tmp_netcdf, write_module, read_module):
                 "sample",
             }
             if read_module in [legacyapi, h5netcdf]:
-                assert g.dimensions["time"] is None
-                assert g._current_dim_sizes["time"] == 10 + i
-                assert g.dimensions["nvec"] is not None
-                assert g.dimensions["nvec"] == 5 + i
-                assert g.dimensions["sample"] is not None
-                assert g.dimensions["sample"] == 2 + i
-                assert g.dimensions["collide"] is not None
-                assert g.dimensions["collide"] == 7 + i
-                assert g.dimensions["ship"] is not None
-                assert g.dimensions["ship"] == 3 + i
-                assert g.dimensions["ship_strlen"] is not None
-                assert g.dimensions["ship_strlen"] == 10
+                assert g.dimensions["time"].isunlimited()
+                assert g.dimensions["time"].size == 10 + i
+                assert not g.dimensions["nvec"].isunlimited()
+                assert g.dimensions["nvec"].size == 5 + i
+                assert not g.dimensions["sample"].isunlimited()
+                assert g.dimensions["sample"].size == 2 + i
+                assert not g.dimensions["collide"].isunlimited()
+                assert g.dimensions["collide"].size == 7 + i
+                assert not g.dimensions["ship"].isunlimited()
+                assert g.dimensions["ship"].size == 3 + i
+                assert not g.dimensions["ship_strlen"].isunlimited()
+                assert g.dimensions["ship_strlen"].size == 10
             else:
                 assert g.dimensions["time"].isunlimited()
                 assert g.dimensions["time"].size == 10 + i

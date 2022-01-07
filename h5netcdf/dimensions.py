@@ -11,7 +11,14 @@ class Dimensions(MutableMapping):
         return self._group._dimensions[key]# self._group._dim_sizes[key]
 
     def __setitem__(self, key, value):
+        if not self._group._root._writable:
+            raise RuntimeError("H5NetCDF: Write to read only")
         self._group._create_dimension(key, value)
+
+    # def __update__(self, value):
+    #     if not self._group._root._writable:
+    #         raise RuntimeError("H5NetCDF: Write to read only")
+    #     self._group._dimensions.update(value)
 
     def __delitem__(self, key):
         raise NotImplementedError("cannot yet delete dimensions")
@@ -42,12 +49,14 @@ class Dimension(object):
         self._root = parent._root
         self._h5path = _join_h5paths(parent.name, name)
         if create:
-            kwargs = {}
-            if size is None:
-                kwargs["maxshape"] = (None,)
-            self._parent._h5group.create_dataset(
-                name=name, shape=(size,), dtype=">f4", **kwargs
-            )
+            self._parent._create_dim_scale(name)
+            #kwargs = {}
+            #if size is None:
+            #    kwargs["maxshape"] = (None,)
+            #self._parent._h5group.create_dataset(
+            #    name=name, shape=(size,), dtype=">f4", **kwargs
+            #)
+
         self._name = name
         self._size = size
         self._initialized = True
