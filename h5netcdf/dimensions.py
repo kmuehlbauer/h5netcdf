@@ -1,4 +1,4 @@
-import h5py
+import weakref
 
 from collections.abc import MutableMapping
 
@@ -44,22 +44,23 @@ def _join_h5paths(parent_path, child_path):
 
 class Dimension(object):
     def __init__(self, parent, name, size=None, phony=False, create=False):
-        self._parent = parent
+        self._parent_ref = weakref.ref(parent)
         self._phony = phony
-        self._root = parent._root
+        self._root_ref = weakref.ref(parent._root)
         self._h5path = _join_h5paths(parent.name, name)
         if create:
             self._parent._create_dim_scale(name)
-            #kwargs = {}
-            #if size is None:
-            #    kwargs["maxshape"] = (None,)
-            #self._parent._h5group.create_dataset(
-            #    name=name, shape=(size,), dtype=">f4", **kwargs
-            #)
-
         self._name = name
         self._size = size
         self._initialized = True
+
+    @property
+    def _root(self):
+        return self._root_ref()
+
+    @property
+    def _parent(self):
+        return self._parent_ref()
 
     @property
     def isphony(self):
