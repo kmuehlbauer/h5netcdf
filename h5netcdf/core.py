@@ -389,6 +389,7 @@ class Group(Mapping):
             self._dim_sizes = parent._dim_sizes.new_child()
             self._current_dim_sizes = parent._current_dim_sizes.new_child()
             self._dim_order = parent._dim_order.new_child()
+            self._all_dimensions = parent._all_dimensions.new_child()
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
@@ -398,6 +399,8 @@ class Group(Mapping):
         # # initialize phony dimension counter
         if self._root._phony_dims_mode is not None:
             self._phony_dims = {}
+            #labeled_dims_count = 0
+            #phony_dims_count = 0
             phony_dims = defaultdict(int)
             labeled_dims = defaultdict(int)
 
@@ -423,10 +426,12 @@ class Group(Mapping):
                         size = None if v.maxshape == (None,) else v.size
                         current_size = v.size
 
-                    self._dim_sizes[k] = self.dimensions[k].size
+                    #self._dim_sizes[k] = self.dimensions[k].size
+                    self._all_dimensions[k] = self._dimensions[k]
 
                     # keep track of found labeled dimensions
                     if self._root._phony_dims_mode is not None:
+                        #labeled_dims_count += 1
                         labeled_dims[size] += 1
                         self._phony_dims[(size, labeled_dims[size] - 1)] = k
 
@@ -440,12 +445,17 @@ class Group(Mapping):
                     self._dim_order[k] = dim_id
                 else:
                     if self._root._phony_dims_mode is not None:
+
+                        #self._root._phony_dim_count += 1
+
+
                         # check if malformed variable
                         if not _unlabeled_dimension_mix(v):
                             # if unscaled variable, get phony dimensions
                             vdims = defaultdict(int)
                             for i in v.shape:
                                 vdims[i] += 1
+
                             for dimsize, cnt in vdims.items():
                                 phony_dims[dimsize] = max(phony_dims[dimsize], cnt)
                             #self._dimensions.add(k)
@@ -457,6 +467,7 @@ class Group(Mapping):
         # iterate over found phony dimensions and create them
         if self._root._phony_dims_mode is not None:
             grp_phony_count = 0
+            #grp_phony_count += sum(phony_dims.values())
             for size, cnt in phony_dims.items():
                 # only create missing dimensions
                 for pcnt in range(labeled_dims[size], cnt):
@@ -531,7 +542,8 @@ class Group(Mapping):
             raise ValueError("dimension %r already exists" % name)
 
         print("LOG:", self._h5group)
-
+        dimsize = None if size == 0 else size
+        cursize = 0 if size is None else size
         self._dim_sizes[name] = None if size == 0 else size
         self._current_dim_sizes[name] = 0 if size is None else size
         self._root._max_dim_id += 1
@@ -539,6 +551,7 @@ class Group(Mapping):
 
         self._dimensions[name] = self._dimension_cls(self, name, size=size,
                                                      phony=phony, create=create)
+        self._all_dimensions[name] = self._dimensions[name]
         print("LOG:", self._h5group)
         # Increase maximum dimension id (_Netcdf4Dimid)
 
@@ -633,9 +646,16 @@ class Group(Mapping):
         else:
             h5name = name
 
+        print("diemsnison:", list(self.dimensions))
+        print(name, h5name)
+        print(list(self._dimensions))
+        print(dimensions)
         shape = tuple(self._current_dim_sizes[d] for d in dimensions)
         #shape = tuple(self._dim_sizes[d].size for d in dimensions)
-        maxshape = tuple(self._dim_sizes[d] for d in dimensions)
+        #maxshape = tuple(self._dim_sizes[d] for d in dimensions)
+        #print(maxshape)
+        maxshape = tuple(self._all_dimensions[d].maxsize for d in dimensions if d)
+        print(maxshape)
         #maxshape = tuple(self._dim_sizes[d].maxsize for d in dimensions)
 
         # If it is passed directly it will change the default compression
@@ -734,6 +754,7 @@ class Group(Mapping):
 
     def _create_dim_scale(self, dim):
         """Create HDF5 dimension scale."""
+        # Todo: Hier weiter machen
         dim_order = self._dim_order.maps[0]
         if dim not in self._h5group:
             size = self._current_dim_sizes[dim]
@@ -991,6 +1012,7 @@ class File(Group):
         self._dim_sizes = ChainMap()
         self._current_dim_sizes = ChainMap()
         self._dim_order = ChainMap()
+        self._all_dimensions = ChainMap()
         self._all_h5groups = ChainMap(self._h5group)
         super(File, self).__init__(self, self._h5path)
         # get maximum dimension id

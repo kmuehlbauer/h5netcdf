@@ -97,7 +97,7 @@ class Dimension(object):
 
     @property
     def maxsize(self):
-        return 0 if self.isunlimited() else self.size
+        return None if self.isunlimited() else self.size
 
     def __len__(self):
         if self.isphony:
