@@ -273,6 +273,7 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
         assert array_equal(v, _char_array)
         assert v.dtype == "S1"
         assert v.ndim == 2
+        #print(v.dimensions)
         assert v.dimensions == ("z", "string3")
         assert v.ncattrs() == ["_FillValue"]
         assert v.getncattr("_FillValue") == b"X"
@@ -359,6 +360,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert not v.fletcher32
     assert not v.shuffle
     ds.close()
+    print("TTESFHJDJHFDK")
 
     if is_h5py_char_working(tmp_netcdf, "z"):
         ds = h5netcdf.File(tmp_netcdf, "r")
@@ -371,6 +373,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
         assert v.attrs["_FillValue"] == b"X"
     else:
         ds = h5netcdf.File(tmp_netcdf, "r", **decode_vlen_strings)
+    print("TTESFHJDJHFDK")
 
     v = ds["scalar"]
     assert array_equal(v, np.array(2.0))
@@ -422,6 +425,7 @@ def test_write_legacyapi_read_netCDF4(tmp_local_netcdf):
 
 
 def test_roundtrip_h5netcdf_legacyapi(tmp_local_netcdf):
+    print(tmp_local_netcdf)
     roundtrip_legacy_netcdf(tmp_local_netcdf, legacyapi, legacyapi)
 
 
@@ -950,8 +954,8 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
         assert f.variables["dummy"].shape == (0, 2)
         f.resize_dimension("x", 3)
         # This will also force a resize of the existing variables and it will
-        # be padded with zeros..
-        assert f._current_dim_sizes["x"] == 3
+        # be padded with zeros.
+        assert f.dimensions["x"].size == 3
         np.testing.assert_allclose(f.variables["dummy"], np.zeros((3, 2)))
 
         # Creating another variable with no data will now also take the shape
@@ -968,7 +972,7 @@ def test_creating_variables_with_unlimited_dimensions(tmp_local_or_remote_netcdf
         assert f.variables["dummy3"].shape == (3, 2)
         assert f.variables["dummy3"]._h5ds.maxshape == (None, 2)
         assert f["x"].shape == (3,)
-        assert f._current_dim_sizes["x"] == 3
+        assert f.dimensions["x"].size == 3
         np.testing.assert_allclose(f.variables["dummy3"], np.zeros((3, 2)))
 
     # Close and read again to also test correct parsing of unlimited
@@ -1080,9 +1084,9 @@ def test_reading_unlimited_dimensions_created_with_c_api(tmp_local_netcdf):
         assert f.dimensions["z"].isunlimited()
 
         # This is parsed correctly due to h5netcdf's init trickery.
-        assert f._current_dim_sizes["x"] == 2
-        assert f._current_dim_sizes["y"] == 3
-        assert f._current_dim_sizes["z"] == 0
+        assert f.dimensions["x"].size == 2
+        assert f.dimensions["y"].size == 3
+        assert f.dimensions["z"].size == 0
 
         # But the actual data-set and arrays are not correct.
         # assert f["dummy1"].shape == (2, 3)
@@ -1423,6 +1427,7 @@ def test_no_circular_references(tmp_local_netcdf):
 
 
 def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
+    print(tmp_local_netcdf)
     with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
         f = ds.createGroup("test")
         f.createDimension("x", None)
@@ -1452,6 +1457,8 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
             ds.set_auto_mask(False)
 
         f = ds["test"]
+        dummy1 = f.variables["dummy1"]
+        print("Dummy1:", dummy1)
 
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
@@ -1464,6 +1471,8 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
 
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
         f = ds["test"]
+        dummy1 = f.variables["dummy1"]
+        print("Dummy1:", dummy1)
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
         assert f.variables["dummy1"]._h5ds.shape == (3, 3)

@@ -48,10 +48,12 @@ class Dimension(object):
         self._phony = phony
         self._root_ref = weakref.ref(parent._root)
         self._h5path = _join_h5paths(parent.name, name)
-        if create:
-            self._parent._create_dim_scale(name)
+        #if create:
+        #    self._parent._create_dim_scale(name, size)
         self._name = name
         self._size = size
+        self._dimid = self._root._max_dim_id
+
         self._initialized = True
 
     @property
@@ -79,6 +81,7 @@ class Dimension(object):
         if self.isphony:
             return self._name
         return self._h5ds.name
+        #return self._name
 
     def isunlimited(self):
         if self.isphony:
@@ -89,11 +92,13 @@ class Dimension(object):
     def dimid(self):
         if self.isphony:
             return False
-        return self._h5ds.attrs.get("_Netcdf4Dimid")
+        return self._h5ds.attrs.get("_Netcdf4Dimid", self._dimid)
+
 
     @property
     def size(self):
-        return len(self)
+        #return len(self)
+        return self._parent._determine_current_dimension_size(self._name, len(self))
 
     @property
     def maxsize(self):
