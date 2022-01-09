@@ -273,7 +273,6 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
         assert array_equal(v, _char_array)
         assert v.dtype == "S1"
         assert v.ndim == 2
-        #print(v.dimensions)
         assert v.dimensions == ("z", "string3")
         assert v.ncattrs() == ["_FillValue"]
         assert v.getncattr("_FillValue") == b"X"
@@ -360,7 +359,6 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert not v.fletcher32
     assert not v.shuffle
     ds.close()
-    print("TTESFHJDJHFDK")
 
     if is_h5py_char_working(tmp_netcdf, "z"):
         ds = h5netcdf.File(tmp_netcdf, "r")
@@ -373,7 +371,6 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
         assert v.attrs["_FillValue"] == b"X"
     else:
         ds = h5netcdf.File(tmp_netcdf, "r", **decode_vlen_strings)
-    print("TTESFHJDJHFDK")
 
     v = ds["scalar"]
     assert array_equal(v, np.array(2.0))
@@ -425,7 +422,6 @@ def test_write_legacyapi_read_netCDF4(tmp_local_netcdf):
 
 
 def test_roundtrip_h5netcdf_legacyapi(tmp_local_netcdf):
-    print(tmp_local_netcdf)
     roundtrip_legacy_netcdf(tmp_local_netcdf, legacyapi, legacyapi)
 
 
@@ -642,13 +638,11 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
         for i, grp in enumerate(grps):
-            print(dsr[grp])
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
 
     with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
         for i, grp in enumerate(grps):
-            print(dsr[grp])
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
 
@@ -889,7 +883,6 @@ def test_reopen_file_different_dimension_sizes(tmp_local_netcdf):
     with h5netcdf.File(tmp_local_netcdf, "a") as f:
         f.create_variable("/two/foo", data=[1, 2], dimensions=("x",))
     with netCDF4.Dataset(tmp_local_netcdf, "r") as f:
-        print(f.groups)
         assert f.groups["one"].variables["foo"][...].shape == (1,)
 
 
@@ -1427,7 +1420,6 @@ def test_no_circular_references(tmp_local_netcdf):
 
 
 def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
-    print(tmp_local_netcdf)
     with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
         f = ds.createGroup("test")
         f.createDimension("x", None)
@@ -1458,7 +1450,6 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
 
         f = ds["test"]
         dummy1 = f.variables["dummy1"]
-        print("Dummy1:", dummy1)
 
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
@@ -1472,7 +1463,6 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
         f = ds["test"]
         dummy1 = f.variables["dummy1"]
-        print("Dummy1:", dummy1)
         np.testing.assert_allclose(f.variables["dummy1"][:], res1)
         assert f.variables["dummy1"].shape == (3, 3)
         assert f.variables["dummy1"]._h5ds.shape == (3, 3)
