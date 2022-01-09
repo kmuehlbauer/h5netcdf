@@ -130,14 +130,13 @@ class BaseVariable(object):
 
     def _lookup_dimensions(self):
         attrs = self._h5ds.attrs
-        # variable with DIMENSION_SCALE (Todo: add web link)
-        if attrs.get("CLASS", None) == b"DIMENSION_SCALE":
-            if "_Netcdf4Coordinates" in attrs:
-                order_dim = {value.dimid: key for key, value in self._parent._all_dimensions.items()}
-                return tuple(
-                   order_dim[coord_id] for coord_id in attrs["_Netcdf4Coordinates"]
-                )
-        # is normal variable carrying DIMENSION_LIST
+        # coordinate variable and dimension, eg. 1D ("time") or 2D string variable
+        if "_Netcdf4Coordinates" in attrs and attrs.get("CLASS", None) == b"DIMENSION_SCALE":
+            order_dim = {value.dimid: key for key, value in self._parent._all_dimensions.items()}
+            return tuple(
+               order_dim[coord_id] for coord_id in attrs["_Netcdf4Coordinates"]
+            )
+        # normal variable carrying DIMENSION_LIST
         if "DIMENSION_LIST" in attrs:
             return tuple(
                 self._root._h5file[ref[0]].name.split("/")[-1] for ref in
@@ -240,8 +239,8 @@ class BaseVariable(object):
         # return actual dimensions sizes, this is in line with netcdf4-python
         # special casing unlimited dimensions:
         # !!! need to return the max of all connected variable's
-        # this is because netcdf unlimited dimensions can be 0 length, but connected variables dimensions can have
-        # a certain length. Very strange!!!
+        # because netcdf unlimited dimensions can be any length, but connected variables dimensions can have
+        # a certain larger length. Very strange!!!
         return tuple([max(self._h5ds.shape[i], self._parent._all_dimensions[d].size) for i, d in enumerate(self.dimensions)])
 
     @property
