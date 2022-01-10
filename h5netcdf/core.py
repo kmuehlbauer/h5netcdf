@@ -398,7 +398,7 @@ class Group(Mapping):
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
-        self._dimensions = _LazyObjectLookup(self, self._dimension_cls)
+        self._dimensions = Dimensions(self)#_LazyObjectLookup(self, self._dimension_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
         # initialize phony dimension counter
@@ -521,24 +521,24 @@ class Group(Mapping):
     def name(self):
         return self._h5group.name
 
-    def _create_dimension(self, name, size=None, phony=False):
-        if name in self.dimensions:
-            raise ValueError("dimension %r already exists" % name)
+    def _create_dimension(self, name, size=None):
+        # if name in self.dimensions:
+        #     raise ValueError("dimension %r already exists" % name)
 
-        size = 0 if size is None else size
+        #size = 0 if size is None else size
         # Increase maximum dimension id (_Netcdf4Dimid)
-        self._root._max_dim_id += 1
+        #self._root._max_dim_id += 1
 
         # Create Dimension class instance
-        self._dimensions[name] = self._dimension_cls(self, name, size=size, phony=phony)
-        self._all_dimensions[name] = self._dimensions[name]
+        self._dimensions[name] = size#self._dimension_cls(self, name, size=size)
+        #self._all_dimensions[name] = self._dimensions[name]
 
         # Create dimension scale
-        self._create_dim_scale(name, size)
+        #self._create_dim_scale(name, size)
 
     @property
     def dimensions(self):
-        return Dimensions(self)
+        return self._dimensions#Dimensions(self)
 
     @dimensions.setter
     def dimensions(self, value):
