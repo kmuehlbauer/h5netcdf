@@ -37,10 +37,6 @@ _NC_PROPERTIES = "version=2,h5netcdf=%s,hdf5=%s,h5py=%s" % (
 NOT_A_VARIABLE = b"This is a netCDF dimension but not a netCDF variable."
 
 
-def _reverse_dict(dict_):
-    return dict(zip(dict_.values(), dict_.keys()))
-
-
 def _join_h5paths(parent_path, child_path):
     return "/".join([parent_path.rstrip("/"), child_path.lstrip("/")])
 
@@ -137,6 +133,7 @@ class BaseVariable(object):
                order_dim[coord_id] for coord_id in attrs["_Netcdf4Coordinates"]
             )
         # normal variable carrying DIMENSION_LIST
+        # extract hdf5 file references and get objects name
         if "DIMENSION_LIST" in attrs:
             return tuple(
                 self._root._h5file[ref[0]].name.split("/")[-1] for ref in
@@ -404,7 +401,7 @@ class Group(Mapping):
         self._dimensions = _LazyObjectLookup(self, self._dimension_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
-        # # initialize phony dimension counter
+        # initialize phony dimension counter
         if self._root._phony_dims_mode is not None:
             self._phony_dims = {}
             phony_dims = defaultdict(int)
@@ -501,12 +498,7 @@ class Group(Mapping):
         if not self.dimensions[dim_name].isunlimited():
             return max_size
 
-        def _find_dim(h5group, dim):
-            if dim not in h5group:
-                return _find_dim(h5group.parent, dim)
-            return h5group[dim]
-
-        dim_variable = _find_dim(self._h5group, dim_name)
+        dim_variable = self._all_dimensions[dim_name]._h5ds
 
         if "REFERENCE_LIST" not in dim_variable.attrs:
             return max_size
@@ -515,8 +507,6 @@ class Group(Mapping):
 
         for ref, axis in dim_variable.attrs["REFERENCE_LIST"]:
             var = root[ref]
-            var_d = var.dims[axis]
-            name = _name_from_dimension(var_d)
             max_size = max(var.shape[axis], max_size)
 
         return max_size
@@ -543,9 +533,8 @@ class Group(Mapping):
         self._dimensions[name] = self._dimension_cls(self, name, size=size, phony=phony)
         self._all_dimensions[name] = self._dimensions[name]
 
-        # Create dimension scale only if we have write permission
-        if self._root._writable and name not in self._h5group:
-            self._create_dim_scale(name, size)
+        # Create dimension scale
+        self._create_dim_scale(name, size)
 
     @property
     def dimensions(self):
@@ -559,7 +548,7 @@ class Group(Mapping):
                     raise ValueError("cannot modify existing dimension %r" % k)
             else:
                 raise ValueError(
-                    "new dimensions do not include existing " "dimension %r" % k
+                    "new dimensions do not include existing dimension %r" % k
                 )
         self.dimensions.update(value)
 
