@@ -6,21 +6,23 @@ from collections.abc import MutableMapping
 
 class Dimensions(MutableMapping):
     def __init__(self, group):
-        self._group = group
+        self._group_ref = weakref.ref(group)
         self._objects = OrderedDict()
 
-    def __getitem__(self, key):
-        #return self._group._dimensions[key]
-        if self._objects[key] is not None:
-            return self._objects[key]
+    @property
+    def _group(self):
+        return self._group_ref()
+
+    def __getitem__(self, name):
+        if self._objects[name] is not None:
+            return self._objects[name]
         else:
-            self._objects[key] = Dimension(self._group, key)
-            return self._objects[key]
-        #return self._objects[key]
+            self._objects[name] = Dimension(self._group, name)
+            return self._objects[name]
 
     def __setitem__(self, name, size):
         phony = "phony_dim" in name
-        if not self._group._root._writable and :
+        if not self._group._root._writable and not phony:
             raise RuntimeError("H5NetCDF: Write to read only")
         if name in self._objects:
             raise ValueError("dimension %r already exists" % name)
@@ -30,18 +32,18 @@ class Dimensions(MutableMapping):
 
         self._objects[name] = Dimension(self._group, name, size, phony=phony)
         self._group._all_dimensions[name] = self._objects[name]
+
         if self._group._root._writable:
             self._group._create_dim_scale(name, size)
-        #self._group._create_dimension(key, value)
 
     def add(self, name):
         self._objects[name] = None
+        self._group._all_dimensions[name] = self[name]
 
     def __delitem__(self, key):
         raise NotImplementedError("cannot yet delete dimensions")
 
     def __iter__(self):
-        #for key in self._group._dimensions:
         for key in self._objects:
             yield key
 
@@ -102,18 +104,44 @@ class Dimension(object):
         return self._h5ds.maxshape == (None,)
 
     @property
+    def isscale(self):
+        NOT_A_VARIABLE = b"This is a netCDF dimension but not a netCDF variable."
+        return NOT_A_VARIABLE in self._h5ds.attrs.get("NAME", b"")
+
+    @property
     def dimid(self):
         if self.isphony:
             return False
         return self._h5ds.attrs.get("_Netcdf4Dimid", self._dimid)
 
-
     @property
     def size(self):
+        max_size = len(self)
         if self.isunlimited():
-            return self._parent._determine_current_dimension_size(self._name, len(self))
-        else:
-            return len(self)
+            # get sizes from all connected variables and calculate max
+            reflist = self._h5ds.attrs.get("REFERENCE_LIST", None)
+            if reflist is not None:
+                for ref, axis in reflist:
+                    var = self._parent._h5group["/"][ref]
+                    max_size = max(var.shape[axis], max_size)
+        return max_size
+
+    @property
+    def scale_refs(self):
+        return list(self._h5ds.attrs.get("REFERENCE_LIST", []))
+
+    def attach_scale(self, refs):
+        for var, dim in refs:
+            self._parent._all_h5groups[var].dims[dim].attach_scale(self._h5ds)
+
+    def detach_scale(self):
+        refs = self.scale_refs
+        if refs:
+            for var, dim in refs:
+                self._parent._all_h5groups[var].dims[dim].detach_scale(self._h5ds)
+
+
+
 
     @property
     def maxsize(self):

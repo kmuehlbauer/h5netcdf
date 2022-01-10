@@ -1225,16 +1225,17 @@ def test_is_dimscale(tmp_local_netcdf):
     with legacyapi.Dataset(tmp_local_netcdf, "w") as ds:
         ds.createDimension("x", 10)
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
-        assert ds._is_dimscale("x")
+        assert ds.dimensions["x"].isscale
 
 
 def test_delete_dim_scale(tmp_local_netcdf):
     with legacyapi.Dataset(tmp_local_netcdf, "w") as ds:
         ds.createDimension("x", 10)
     with legacyapi.Dataset(tmp_local_netcdf, "r+") as ds:
-        assert ds._is_dimscale("x")
-        ds._delete_dim_scale("x")
-        assert not ds._is_dimscale("x")
+        assert ds.dimensions["x"].isscale
+        ds.dimensions["x"].detach_scale()
+        del ds.dimensions["x"]._root._h5file[ds.dimensions["x"]._h5path]
+        # assert not ds.dimensions["x"].isscale
 
 
 def test_get_dim_scale_refs(tmp_local_netcdf):
@@ -1243,7 +1244,7 @@ def test_get_dim_scale_refs(tmp_local_netcdf):
         ds.createVariable("test0", "i8", ("x",))
         ds.createVariable("test1", "i8", ("x",))
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
-        refs = ds._get_dim_scale_refs("x")
+        refs = ds.dimensions["x"].scale_refs
         assert ds._h5file[refs[0][0]] == ds["test0"]._h5ds
         assert ds._h5file[refs[1][0]] == ds["test1"]._h5ds
 
@@ -1490,3 +1491,22 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
         np.testing.assert_allclose(f.variables["dummy4"][:], res4)
         assert f.variables["dummy4"].shape == (3, 3)
         assert f.variables["dummy4"]._h5ds.shape == (0, 3)
+
+def test_kai(tmp_local_netcdf):
+    with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("x", 10)
+        g0 = ds.createGroup("test0")
+        #g0.createVariable("gtest", "float", ("x",))
+
+    with h5netcdf.File(tmp_local_netcdf, "r+") as ds:
+        print(ds)
+        print(ds["test0"])
+        #g.create_variable("collide", dimensions=("nvec",), dtype=np.int64)
+        ds["test0"].create_variable("gtest", dimensions=("x",), dtype=float)
+        print(ds["test0"]["gtest"])
+        ds["test0"].dimensions["x"] = 20
+        print(ds["test0"]["gtest"])
+        print(ds["test0"])
+        print(ds["test0"]["gtest"].dimensions)
+        #g0 = ds.createGroup("test0")
+        #g0.createVariable("gtest", "float", ("x",)

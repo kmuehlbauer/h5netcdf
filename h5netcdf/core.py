@@ -238,6 +238,7 @@ class BaseVariable(object):
         # !!! need to return the max of all connected variable's
         # because netcdf unlimited dimensions can be any length, but connected variables dimensions can have
         # a certain larger length. Very strange!!!
+        print([(i, d) for i, d in enumerate(self.dimensions)])
         return tuple([max(self._h5ds.shape[i], self._parent._all_dimensions[d].size) for i, d in enumerate(self.dimensions)])
 
     @property
@@ -398,7 +399,7 @@ class Group(Mapping):
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
-        self._dimensions = Dimensions(self)#_LazyObjectLookup(self, self._dimension_cls)
+        self._dimensions = Dimensions(self)
         self._groups = _LazyObjectLookup(self, self._group_cls)
 
         # initialize phony dimension counter
@@ -426,9 +427,6 @@ class Group(Mapping):
                         assert len(v.shape) == 1
                         # Unlimited dimensions are represented as None.
                         size = None if v.maxshape == (None,) else v.size
-
-                    # add dimension to all dimension ChainMap
-                    self._all_dimensions[k] = self._dimensions[k]
 
                     # keep track of found labeled dimensions
                     if self._root._phony_dims_mode is not None:
@@ -462,9 +460,7 @@ class Group(Mapping):
                     grp_phony_count += 1
                     if self._root._phony_dims_mode == "access":
                         name = "phony_dim_{}".format(name)
-                        self._dimensions[name] = self._dimension_cls(self, name, size=size,
-                                                                     phony=True)
-                        self._all_dimensions[name] = self._dimensions[name]
+                        self._dimensions[name] = size
                     self._phony_dims[(size, pcnt)] = name
             # finally increase phony dim count at file level
             self._root._phony_dim_count += grp_phony_count
@@ -485,31 +481,8 @@ class Group(Mapping):
             if isinstance(value, int):
                 value += self._root._labeled_dim_count
                 name = "phony_dim_{}".format(value)
-                self._dimensions[name] = self._dimension_cls(self, name, size=key[0],
-                                                             phony=True)
-                self._all_dimensions[name] = self._dimensions[name]
+                self._dimensions[name] = key
                 self._phony_dims[key] = name
-
-    def _determine_current_dimension_size(self, dim_name, max_size):
-        """
-        Helper method to determine the current size of a dimension.
-        """
-        # Limited dimension.
-        if not self.dimensions[dim_name].isunlimited():
-            return max_size
-
-        dim_variable = self._all_dimensions[dim_name]._h5ds
-
-        if "REFERENCE_LIST" not in dim_variable.attrs:
-            return max_size
-
-        root = self._h5group["/"]
-
-        for ref, axis in dim_variable.attrs["REFERENCE_LIST"]:
-            var = root[ref]
-            max_size = max(var.shape[axis], max_size)
-
-        return max_size
 
     @property
     def _h5group(self):
@@ -521,24 +494,9 @@ class Group(Mapping):
     def name(self):
         return self._h5group.name
 
-    def _create_dimension(self, name, size=None):
-        # if name in self.dimensions:
-        #     raise ValueError("dimension %r already exists" % name)
-
-        #size = 0 if size is None else size
-        # Increase maximum dimension id (_Netcdf4Dimid)
-        #self._root._max_dim_id += 1
-
-        # Create Dimension class instance
-        self._dimensions[name] = size#self._dimension_cls(self, name, size=size)
-        #self._all_dimensions[name] = self._dimensions[name]
-
-        # Create dimension scale
-        #self._create_dim_scale(name, size)
-
     @property
     def dimensions(self):
-        return self._dimensions#Dimensions(self)
+        return self._dimensions
 
     @dimensions.setter
     def dimensions(self, value):
@@ -550,7 +508,7 @@ class Group(Mapping):
                 raise ValueError(
                     "new dimensions do not include existing dimension %r" % k
                 )
-        self.dimensions.update(value)
+        self._dimensions.update(value)
 
     def _create_child_group(self, name):
         if name in self:
@@ -628,10 +586,9 @@ class Group(Mapping):
         # Keep the references, to re-attach later
         refs = None
         if h5name in self.dimensions and h5name in self._h5group:
-            h5ds = self._h5group[h5name]
-            if _netcdf_dimension_but_not_variable(h5ds):
-                refs = self._get_dim_scale_refs(name)
-                self._delete_dim_scale(name)
+            refs = self.dimensions[name].scale_refs
+            self.dimensions[name].detach_scale()
+            del self._h5group[name]
 
         self._h5group.create_dataset(
             h5name, shape, dtype=dtype, data=data, fillvalue=fillvalue, **kwargs
@@ -643,7 +600,7 @@ class Group(Mapping):
         if name in self.dimensions and h5name in self._h5group:
             self._create_dim_scale(name, shape)
             if refs is not None:
-                self._attach_dim_scale(name, refs)
+                self.dimensions[name].attach_scale(refs)
 
         # In case of data variables attach dim_scales and coords.
         if name in self.variables and h5name not in self.dimensions:
@@ -731,39 +688,39 @@ class Group(Mapping):
             else:
                 h5ds.make_scale(scale_name)
 
-    def _attach_dim_scale(self, name, refs):
-        """Attach dimension scale to variable references"""
-        for var, dim in refs:
-            self._all_h5groups[var].dims[dim].attach_scale(self._all_h5groups[name])
-
-    def _detach_dim_scale(self, name, refs):
-        """Detach dimension scale from variable references"""
-        for var, dim in refs:
-            self._all_h5groups[var].dims[dim].detach_scale(self._all_h5groups[name])
-
-    def _get_dim_scale_refs(self, name):
-        """Get variable scale references from dimension scale"""
-        return (
-            list(self._h5group[name].attrs.get("REFERENCE_LIST", []))
-            if name in self._h5group
-            else []
-        )
-
-    def _is_dimscale(self, name):
-        """Check if name is dimension scale"""
-        return (
-            _netcdf_dimension_but_not_variable(self._h5group[name])
-            if name in self._h5group
-            else False
-        )
-
-    def _delete_dim_scale(self, name):
-        """Delete Dimension Scale"""
-        if self._is_dimscale(name):
-            refs = self._get_dim_scale_refs(name)
-            if refs:
-                self._detach_dim_scale(name, refs)
-            del self._h5group[name]
+    # def _attach_dim_scale(self, name, refs):
+    #     """Attach dimension scale to variable references"""
+    #     for var, dim in refs:
+    #         self._all_h5groups[var].dims[dim].attach_scale(self._all_h5groups[name])
+    #
+    # def _detach_dim_scale(self, name, refs):
+    #     """Detach dimension scale from variable references"""
+    #     for var, dim in refs:
+    #         self._all_h5groups[var].dims[dim].detach_scale(self._all_h5groups[name])
+    #
+    # def _get_dim_scale_refs(self, name):
+    #     """Get variable scale references from dimension scale"""
+    #     return (
+    #         list(self._h5group[name].attrs.get("REFERENCE_LIST", []))
+    #         if name in self._h5group
+    #         else []
+    #     )
+    #
+    # def _is_dimscale(self, name):
+    #     """Check if name is dimension scale"""
+    #     return (
+    #         _netcdf_dimension_but_not_variable(self._h5group[name])
+    #         if name in self._h5group
+    #         else False
+    #     )
+    #
+    # def _delete_dim_scale(self, name):
+    #     """Delete Dimension Scale"""
+    #     if self._is_dimscale(name):
+    #         refs = self._get_dim_scale_refs(name)
+    #         if refs:
+    #             self._detach_dim_scale(name, refs)
+    #         del self._h5group[name]
 
     @property
     def parent(self):
