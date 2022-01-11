@@ -6,6 +6,57 @@ from collections.abc import MutableMapping
 
 class Dimensions(MutableMapping):
     def __init__(self, group):
+        self._group = group
+        self._dimensions = group._all_dimensions
+
+    def __getitem__(self, name):
+        return self._dimensions[name]
+        #if self._objects[name] is not None:
+        #    return self._objects[name]
+        #else:
+        #    self._objects[name] = Dimension(self._group, name)
+        #    return self._objects[name]
+
+    def __setitem__(self, name, size):
+        #self._group._create_dimension(key, value)
+        phony = "phony_dim" in name
+        if not self._group._root._writable and not phony:
+            raise RuntimeError("H5NetCDF: Write to read only")
+        if name in self._dimensions.maps[0]:
+            raise ValueError("dimension %r already exists" % name)
+
+        self._group._root._max_dim_id += 1
+        size = 0 if size is None else size
+
+        self._dimensions[name] = Dimension(self._group, name, size, phony=phony)
+        #self._group._all_dimensions[name] = self._objects[name]
+
+        if self._group._root._writable:
+            self._group._create_dim_scale(name, size, self._group._root._max_dim_id)
+
+    def add(self, name):
+        self._dimensions[name] = Dimension(self._group, name)
+        #self._group._all_dimensions[name] = self[name]
+
+    def __delitem__(self, key):
+        raise NotImplementedError('cannot yet delete dimensions')
+
+    def __iter__(self):
+        for key in self._dimensions:
+            yield key
+
+    def __len__(self):
+        return len(self._dimensions)
+
+    def __repr__(self):
+        if self._group._root._closed:
+            return '<Closed h5netcdf.Dimensions>'
+        return ('<h5netcdf.Dimensions: %s>' %
+                ', '.join('%s=%r' % (k, v) for k, v in self._dimensions.items()))
+
+
+class DimensionsX(MutableMapping):
+    def __init__(self, group):
         self._group_ref = weakref.ref(group)
         self._objects = OrderedDict()
 

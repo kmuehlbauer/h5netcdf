@@ -1494,19 +1494,34 @@ def test_expanded_variables_netcdf4(tmp_local_netcdf, netcdf_write_module):
 
 def test_kai(tmp_local_netcdf):
     with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
-        ds.createDimension("x", 10)
-        g0 = ds.createGroup("test0")
+        g = ds
+        for i in range(10):
+            #print(i)
+            if not i % 2:
+                g.createDimension("x", i)
+            #print(g)
+            g = g.createGroup(f"group_{i:02d}")
+            #print(g)
+        #g0 = ds.createGroup("test0")
         #g0.createVariable("gtest", "float", ("x",))
 
     with h5netcdf.File(tmp_local_netcdf, "r+") as ds:
-        print(ds)
-        print(ds["test0"])
-        #g.create_variable("collide", dimensions=("nvec",), dtype=np.int64)
-        ds["test0"].create_variable("gtest", dimensions=("x",), dtype=float)
-        print(ds["test0"]["gtest"])
-        ds["test0"].dimensions["x"] = 20
-        print(ds["test0"]["gtest"])
-        print(ds["test0"])
-        print(ds["test0"]["gtest"].dimensions)
+        #print(ds)
+        def grp_iter(grp):
+            #print(grp)
+            print(h5netcdf.Dimensions(grp))
+            if grp.groups:
+                for _, g in grp.groups.items():
+                    grp_iter(g)
+        grp_iter(ds)
+
+        # print(ds["test0"])
+        # #g.create_variable("collide", dimensions=("nvec",), dtype=np.int64)
+        # ds["test0"].create_variable("gtest", dimensions=("x",), dtype=float)
+        # print(ds["test0"]["gtest"])
+        # ds["test0"].dimensions["x"] = 20
+        # print(ds["test0"]["gtest"])
+        # print(ds["test0"])
+        # print(ds["test0"]["gtest"].dimensions)
         #g0 = ds.createGroup("test0")
         #g0.createVariable("gtest", "float", ("x",)

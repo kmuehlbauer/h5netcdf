@@ -11,7 +11,7 @@ import numpy as np
 from packaging import version
 
 from .attrs import Attributes
-from .dimensions import Dimensions, Dimension
+from .dimensions import Dimensions, Dimension, DimensionsX
 from .utils import Frozen
 
 try:
@@ -197,7 +197,7 @@ class BaseVariable(object):
         v = None
         for i, dim in enumerate(self.dimensions):
             # is unlimited dimensions
-            if self._parent._all_dimensions[dim].isunlimited():
+            if self._parent.dimensions[dim].isunlimited():
                 if key[i].stop is None:
                     # if stop is None, get dimensions from value,
                     # they must match with variable dimension
@@ -207,7 +207,7 @@ class BaseVariable(object):
                         new_max = max(v.shape[i], self._h5ds.shape[i])
                     elif v.ndim == 0:
                         # for scalars we take the current dimension size
-                        new_max = self._parent._dimensions[dim].size
+                        new_max = self._parent.dimensions[dim].size
                     else:
                         raise IndexError("shape of data does not conform to slice")
                 else:
@@ -215,11 +215,11 @@ class BaseVariable(object):
                 # resize unlimited dimension if needed but no other variables
                 # this is in line with `netcdf4-python` which only resizes
                 # the dimension and this variable
-                if self._parent._dimensions[dim].size < new_max:
+                if self._parent.dimensions[dim].size < new_max:
                     self._parent.resize_dimension(dim, new_max, resize_vars=False)
                 new_shape += (new_max,)
             else:
-                new_shape += (self._parent._all_dimensions[dim].size,)
+                new_shape += (self._parent.dimensions[dim].size,)
 
         # increase variable size if shape is changing
         if self._h5ds.shape != new_shape:
@@ -383,7 +383,7 @@ def _unlabeled_dimension_mix(h5py_dataset):
 class Group(Mapping):
 
     _variable_cls = Variable
-    _dimension_cls = Dimension
+    #_dimension_cls = Dimension
 
     @property
     def _group_cls(self):
@@ -496,7 +496,7 @@ class Group(Mapping):
 
     @property
     def dimensions(self):
-        return self._dimensions
+        return self._dimensions#Dimensions(self)#._dimensions
 
     @dimensions.setter
     def dimensions(self, value):
@@ -509,6 +509,10 @@ class Group(Mapping):
                     "new dimensions do not include existing dimension %r" % k
                 )
         self._dimensions.update(value)
+
+    def _create_dimensions(self, name, size):
+        self._dimensions[name] = size
+        return self._dimensions[name]
 
     def _create_child_group(self, name):
         if name in self:
@@ -543,9 +547,9 @@ class Group(Mapping):
         if data is not None:
             data = np.asarray(data)
             for d, s in zip(dimensions, data.shape):
-                if d not in self.dimensions:
+                if d not in self._dimensions:
                     # calls _create_dimension
-                    self.dimensions[d] = s
+                    self._dimensions[d] = s
 
         if dtype is None:
             dtype = data.dtype
@@ -566,7 +570,7 @@ class Group(Mapping):
             )
 
         # variable <-> dimension name clash
-        if name in self.dimensions and (
+        if name in self._dimensions and (
             name not in dimensions or (len(dimensions) > 1 and dimensions[0] != name)
         ):
             h5name = "_nc4_non_coord_" + name
@@ -585,9 +589,9 @@ class Group(Mapping):
         # dimension scale without a corresponding variable.
         # Keep the references, to re-attach later
         refs = None
-        if h5name in self.dimensions and h5name in self._h5group:
-            refs = self.dimensions[name].scale_refs
-            self.dimensions[name].detach_scale()
+        if h5name in self._dimensions and h5name in self._h5group:
+            refs = self._dimensions[name].scale_refs
+            self._dimensions[name].detach_scale()
             del self._h5group[name]
 
         self._h5group.create_dataset(
@@ -597,13 +601,13 @@ class Group(Mapping):
         variable = self._variables[h5name]
 
         # Re-create dim-scale and re-attach references to coordinate variable.
-        if name in self.dimensions and h5name in self._h5group:
-            self._create_dim_scale(name, shape)
+        if name in self._dimensions and h5name in self._h5group:
+            self._create_dim_scale(name, shape, self._root._max_dim_id)
             if refs is not None:
-                self.dimensions[name].attach_scale(refs)
+                self._dimensions[name].attach_scale(refs)
 
         # In case of data variables attach dim_scales and coords.
-        if name in self.variables and h5name not in self.dimensions:
+        if name in self.variables and h5name not in self._dimensions:
             variable._attach_dim_scales()
             variable._attach_coords()
 
@@ -656,7 +660,7 @@ class Group(Mapping):
     def __len__(self):
         return len(self.variables) + len(self.groups)
 
-    def _create_dim_scale(self, dim, size):
+    def _create_dim_scale(self, dim, size, dimid):
         """Create HDF5 dimension scale."""
         unlimited = size == 0
         if dim not in self._h5group:
@@ -666,7 +670,7 @@ class Group(Mapping):
             self._h5group.create_dataset(name=dim, shape=(size,), dtype=">f4", **kwargs)
 
         h5ds = self._h5group[dim]
-        h5ds.attrs["_Netcdf4Dimid"] = np.array(self._dimensions[dim].dimid, dtype=np.int32)
+        h5ds.attrs["_Netcdf4Dimid"] = np.array(dimid, dtype=np.int32)
 
         if len(h5ds.shape) > 1:
             dims = self._variables[dim].dimensions
@@ -760,7 +764,7 @@ class Group(Mapping):
                     if v is None
                     else v,
                 )
-                for k, v in self.dimensions.items()
+                for k, v in self._dimensions.items()
             ]
             + ["Groups:"]
             + ["    %s" % g for g in self.groups]
@@ -785,7 +789,7 @@ class Group(Mapping):
         It will pad with the underlying HDF5 data sets' fill values (usually
         zero) where necessary.
         """
-        if not self.dimensions[dim].isunlimited():
+        if not self._dimensions[dim].isunlimited():
             raise ValueError(
                 "Dimension '%s' is not unlimited and thus cannot be resized." % dim
             )

@@ -66,9 +66,10 @@ class Group(core.Group, HasAttributesMixin):
         return Group
 
     createGroup = core.Group.create_group
+    #createDimension = core.Group.dimensions
 
     def createDimension(self, name, size):
-        self._dimensions[name] = size
+        return super(Group, self)._create_dimensions(name, size)#dimensions.update({name: size})
 
     def createVariable(
         self,
