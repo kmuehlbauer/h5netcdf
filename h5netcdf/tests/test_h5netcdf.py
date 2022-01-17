@@ -621,29 +621,81 @@ def check_invalid_netcdf4(var, i):
 
 def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
     h5 = get_hdf5_module(tmp_local_or_remote_netcdf)
-    with h5.File(tmp_local_or_remote_netcdf, "w") as f:
+    grps = {"baz": 0, "foo": 1, "bar": 2}
+
+    # we have to create with track_order = True
+    with h5.File(tmp_local_or_remote_netcdf, "w", track_order=True) as f:
         var, var2 = create_invalid_netcdf_data()
-        grps = ["bar", "baz"]
         for grp in grps:
-            fx = f.create_group(grp)
+            fx = f.create_group(grp, track_order=True)
             for k, v in var.items():
                 fx.create_dataset(k, data=v)
             for k, v in var2.items():
                 fx.create_dataset(k, data=np.arange(v))
 
+    # iterate over groups as inserted
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
-        for i, grp in enumerate(grps):
+        for grp, i in grps.items():
+            var = dsr[grp].variables
+            assert dsr[grp].name.split("/")[-1] == grp
+            check_invalid_netcdf4(var, i)
+
+    # should not raise, if iterated reversed
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
+        rev_grps = dict(reversed(list(grps.items())))
+        for grp, i in rev_grps.items():
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
 
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
-        for i, grp in enumerate(grps):
+    # iterate over dataset groups in file order
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
+        for i, grp in enumerate(dsr.groups.values()):
+            var = grp.variables
+            assert grp.name.split("/")[-1] == list(grps)[i]
+            check_invalid_netcdf4(var, i)
+
+    # should not raise, if iterated reversed
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
+        rev_keys = reversed(list(dsr.groups))
+        rev_grps = {key: grps[key] for key in rev_keys}
+        for grp, i in rev_grps.items():
             var = dsr[grp].variables
             check_invalid_netcdf4(var, i)
+
+    # iterate over groups as inserted
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
+        for grp, i in grps.items():
+            var = dsr[grp].variables
+            assert dsr[grp].name.split("/")[-1] == list(grps)[i]
+            check_invalid_netcdf4(var, i)
+
+    # iterate over groups in file order,
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
+        for i, grp in enumerate(dsr.groups.values()):
+            var = grp.variables
+            assert grp.name.split("/")[-1] == list(grps)[i]
+            check_invalid_netcdf4(var, i)
+
+    # should raise, if iterated the other way round
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
+        rev_grps = dict(reversed(list(grps.items())))
+        with pytest.raises(AssertionError):
+            for grp, i in rev_grps.items():
+                var = dsr[grp].variables
+                check_invalid_netcdf4(var, i)
 
     with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
-        for i, grp in enumerate(grps):
+        for i, grp in enumerate(dsr.groups):
             var = dsr[grp].variables
+            assert dsr[grp].name == list(grps)[i]
+            check_invalid_netcdf4(var, i)
+
+    # should not raise, if iterated reversed
+    with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
+        rev_grps = dict(reversed(list(grps.items())))
+        for grp, i in rev_grps.items():
+            var = dsr[grp].variables
+            assert dsr[grp].name == grp
             check_invalid_netcdf4(var, i)
 
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -654,6 +706,68 @@ def test_invalid_netcdf4(tmp_local_or_remote_netcdf):
         with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="srt") as ds:
             pass
 
+
+def test_invalid_netcdf4_false(tmp_local_or_remote_netcdf):
+    h5 = get_hdf5_module(tmp_local_or_remote_netcdf)
+
+    grps = {"baz": 1, "foo": 2, "bar": 0}
+
+    # if we create with track_order = False,
+    with h5.File(tmp_local_or_remote_netcdf, "w", track_order=False) as f:
+        var, var2 = create_invalid_netcdf_data()
+        for grp in grps:
+            fx = f.create_group(grp, track_order=False)
+            for k, v in var.items():
+                fx.create_dataset(k, data=v)
+            for k, v in var2.items():
+                fx.create_dataset(k, data=np.arange(v))
+
+    # iterate in file order (alphanumerically)
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
+        for i, grp in enumerate(dsr.groups.values()):
+            var = grp.variables
+            check_invalid_netcdf4(var, i)
+
+    # should not raise, if iterated reversed
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="sort") as dsr:
+        rev_grps = dict(sorted(list(grps.items())))
+        for grp, i in rev_grps.items():
+            var = dsr[grp].variables
+            check_invalid_netcdf4(var, i)
+
+    # same as with "sort", if accessed in insertion order
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
+        for i, grp in enumerate(dsr.groups.values()):
+            var = grp.variables
+            check_invalid_netcdf4(var, i)
+
+    # should raise, if iterated the other way round
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="access") as dsr:
+        rev_grps = dict(reversed(list(grps.items())))
+        with pytest.raises(AssertionError):
+            for grp, i in rev_grps.items():
+                var = dsr[grp].variables
+                check_invalid_netcdf4(var, i)
+
+    with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
+        for i, grp in enumerate(dsr.groups):
+            var = dsr[grp].variables
+            check_invalid_netcdf4(var, i)
+
+    # should not raise, if iterated reversed
+    with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as dsr:
+        rev_grps = dict(reversed(list(grps.items())))
+        for grp, i in rev_grps.items():
+            var = dsr[grp].variables
+            check_invalid_netcdf4(var, i)
+
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
+        with raises(ValueError):
+            ds["bar"].variables["foo1"].dimensions
+
+    with raises(ValueError):
+        with h5netcdf.File(tmp_local_or_remote_netcdf, "r", phony_dims="srt") as ds:
+            pass
 
 def check_invalid_netcdf4_mixed(var, i):
     pdim = "phony_dim_{}".format(i)

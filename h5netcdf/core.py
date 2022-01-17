@@ -437,8 +437,7 @@ class Group(Mapping):
 
         # initialize phony dimension counter
         if self._root._phony_dims_mode is not None:
-            phony_dims = defaultdict(int)
-            labeled_dims = defaultdict(int)
+            phony_dims = Counter()
 
         for k, v in self._h5group.items():
             if isinstance(v, h5_group_types):
@@ -455,11 +454,7 @@ class Group(Mapping):
                         # check if malformed variable
                         if not _unlabeled_dimension_mix(v):
                             # if unscaled variable, get phony dimensions
-                            vdims = defaultdict(int)
-                            for i in v.shape:
-                                vdims[i] += 1
-                            for dimsize, cnt in vdims.items():
-                                phony_dims[dimsize] = max(phony_dims[dimsize], cnt)
+                            phony_dims |= Counter(v.shape)
 
                 if not _netcdf_dimension_but_not_variable(v):
                     if isinstance(v, h5_dataset_types):
