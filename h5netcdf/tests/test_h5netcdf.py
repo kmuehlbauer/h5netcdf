@@ -1632,33 +1632,16 @@ def test_bool_slicing_length_one_dim(tmp_local_netcdf):
             ds["hello"][bool_slice, :]
 
 
-def test_issue(tmp_local_netcdf):
+def test_create_invalid_netcdf_catch_error(tmp_local_netcdf):
     with h5netcdf.File("test.nc", "w") as f:
         try:
             f.create_variable("test", ("x", "y"), data=np.ones((10, 10), dtype="bool"))
         except:
             pass
-
         assert f.dimensions.__repr__() == "<h5netcdf.Dimensions: >"
 
 
-def test_dimensions_parent_groups(tmp_local_netcdf):
-    with netCDF4.Dataset(tmp_local_netcdf, mode="w") as ds:
-        ds0 = ds
-        for i in range(10):
-            ds = ds.createGroup(f"group{i:02d}")
-        ds0.createDimension("x", 10)
-        ds0.createDimension("y", 20)
-        ds0["group00"].createVariable("test", float, ("x", "y"))
-
-    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
-        print(ds)
-        print(ds["group00"])
-        print(ds["group00"]._all_dimensions)
-        print(ds["group00"]._all_dimensions.maps[0])
-
-
-def test_dimensions_parent_groups1(tmp_local_netcdf):
+def test_dimensions_in_parent_groups(tmp_local_netcdf):
     with netCDF4.Dataset(tmp_local_netcdf, mode="w") as ds:
         ds0 = ds
         for i in range(10):
@@ -1669,14 +1652,11 @@ def test_dimensions_parent_groups1(tmp_local_netcdf):
         var = ds0["group00"].createVariable("x", float, ("x", "y"))
         var[:] = np.ones((10, 20))
 
-    import subprocess
-    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test.nc"])
-
-    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
-        print(ds)
-        print(ds["group00"])
-        print(ds["group00"]._all_dimensions)
-        print(ds["group00"]._all_dimensions.maps[0])
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds0:
+        print(ds0)
+        print(ds0["group00"])
+        print(ds0["group00"]._all_dimensions)
+        print(ds0["group00"]._all_dimensions.maps[0])
 
     with legacyapi.Dataset(tmp_local_netcdf, mode="w") as ds:
         ds0 = ds
@@ -1688,21 +1668,8 @@ def test_dimensions_parent_groups1(tmp_local_netcdf):
         var = ds0["group00"].createVariable("x", float, ("x", "y"))
         var[:] = np.ones((10, 20))
 
-    import subprocess
-    #subprocess.check_call(["h5dump", "-H", f"{tmp_local_netcdf}"])
-    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test1.nc"])
-    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test1.nc"])
-
-    #subprocess.check_call(["h5diff", "-v2", "test.nc", "test1.nc"])
-
-    with netCDF4.Dataset(tmp_local_netcdf, "r") as ds:
-        print(ds)
-        print(ds["group00"])
-
-
-    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
-        print("#############################################")
-        print(ds)
-        print(ds["group00"])
-        print(ds["group00"]._all_dimensions)
-        print(ds["group00"]._all_dimensions.maps[0])
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds1:
+        print(ds1)
+        print(ds1["group00"])
+        print(ds1["group00"]._all_dimensions)
+        print(ds1["group00"]._all_dimensions.maps[0])
