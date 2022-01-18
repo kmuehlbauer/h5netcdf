@@ -162,7 +162,7 @@ class BaseVariable(object):
 
         # need to use the h5ds name here to distinguish from collision dimensions
         child_name = self._h5ds.name.split("/")[-1]
-        if child_name in self._parent.dimensions:
+        if child_name in self._parent._all_dimensions:
             return (child_name,)
 
         dims = []
@@ -186,6 +186,7 @@ class BaseVariable(object):
                     # get dimension names
                     dim_names = [
                         d.name
+                        # for phony dims we need to look only in the current group
                         for d in self._parent._all_dimensions.maps[0].values()
                         if d.size == dimsize
                     ]
@@ -198,11 +199,13 @@ class BaseVariable(object):
     def _attach_dim_scales(self):
         """Attach dimension scales"""
         for n, dim in enumerate(self.dimensions):
-            self._h5ds.dims[n].attach_scale(self._parent._all_h5groups[dim])
+            # find and attach dimensions also in parent groups
+            self._h5ds.dims[n].attach_scale(self._parent._all_dimensions[dim]._h5ds)
 
     def _attach_coords(self):
         dims = self.dimensions
         coord_ids = np.array(
+            # find dimensions also in parent groups
             [self._parent._all_dimensions[d].dimid for d in dims], "int32"
         )
         if len(coord_ids) > 1:
@@ -222,7 +225,7 @@ class BaseVariable(object):
         new_shape = ()
         v = None
         for i, dim in enumerate(self.dimensions):
-            # is unlimited dimensions
+            # is unlimited dimensions (check in all dimensions)
             if self._parent._all_dimensions[dim].isunlimited():
                 if key[i].stop is None:
                     # if stop is None, get dimensions from value,
@@ -232,7 +235,7 @@ class BaseVariable(object):
                     if v.ndim == self.ndim:
                         new_max = max(v.shape[i], self._h5ds.shape[i])
                     elif v.ndim == 0:
-                        # for scalars we take the current dimension size
+                        # for scalars we take the current dimension size (check in all dimensions
                         new_max = self._parent._all_dimensions[dim].size
                     else:
                         raise IndexError("shape of data does not conform to slice")
@@ -242,7 +245,7 @@ class BaseVariable(object):
                 # this is in line with `netcdf4-python` which only resizes
                 # the dimension and this variable
                 if self._parent._all_dimensions[dim].size < new_max:
-                    self._parent.resize_dimension(dim, new_max, resize_vars=False)
+                    self._parent.resize_dimension(dim, new_max)
                 new_shape += (new_max,)
             else:
                 new_shape += (self._parent._all_dimensions[dim].size,)
@@ -280,6 +283,7 @@ class BaseVariable(object):
         from .legacyapi import Dataset
 
         if isinstance(self._parent._root, Dataset):
+            # this is only for legacyapi
             key = _expanded_indexer(key, self.ndim)
             key = _transform_1d_boolean_indexers(key)
 
@@ -288,7 +292,7 @@ class BaseVariable(object):
             if string_info and string_info.length is None:
                 return self._h5ds.asstr()[key]
 
-        # return array padded with fillvalue
+        # return array padded with fillvalue (both api)
         if self.dtype != str and self.dtype.kind in ["f", "i", "u"]:
             sdiff = [d0 - d1 for d0, d1 in zip(self.shape, self._h5ds.shape)]
             if sum(sdiff):
@@ -307,6 +311,7 @@ class BaseVariable(object):
         from .legacyapi import Dataset
 
         if isinstance(self._parent._root, Dataset):
+            # resize on write only for legacyapi
             key = _expanded_indexer(key, self.ndim)
             key = _transform_1d_boolean_indexers(key)
             # resize on write only for legacy API
@@ -563,10 +568,6 @@ class Group(Mapping):
 
         if data is not None:
             data = np.asarray(data)
-            for d, s in zip(dimensions, data.shape):
-                if d not in self.dimensions:
-                    # calls _create_dimension
-                    self.dimensions[d] = s
 
         if dtype is None:
             dtype = data.dtype
@@ -586,14 +587,33 @@ class Group(Mapping):
                 self._root.invalid_netcdf,
             )
 
+        # maybe create new dimensions depending on data
+        if data is not None:
+            for d, s in zip(dimensions, data.shape):
+                # create new dimensions only ever if
+                #  - they are not known via parent-groups
+                #  - they are given in dimensions
+                #  - it's not a coordinate variable, they will get special handling later
+                if d not in self._all_dimensions and d in dimensions and d is not name:
+                    # calls _create_dimension
+                    self.dimensions[d] = s
+
+        # coordinate variable
+        need_dim_adding = False
+        if dimensions:
+            for dim in dimensions:
+                if name not in self._all_dimensions and name == dim:
+                    need_dim_adding = True
+
         # variable <-> dimension name clash
-        if name in self.dimensions and (
+        if name in self._dimensions and (
             name not in dimensions or (len(dimensions) > 1 and dimensions[0] != name)
         ):
             h5name = "_nc4_non_coord_" + name
         else:
             h5name = name
 
+        # get shape from all dimensions
         shape = tuple(self._all_dimensions[d].size for d in dimensions)
         maxshape = tuple(self._all_dimensions[d].maxsize for d in dimensions if d)
 
@@ -606,11 +626,12 @@ class Group(Mapping):
         # dimension scale without a corresponding variable.
         # Keep the references, to re-attach later
         refs = None
-        if h5name in self.dimensions and h5name in self._h5group:
-            refs = self.dimensions[name].scale_refs
-            self.dimensions[name].detach_scale()
+        if h5name in self._dimensions and h5name in self._h5group:
+            refs = self._dimensions[name].scale_refs
+            self._dimensions[name].detach_scale()
             del self._h5group[name]
 
+        # create hdf5 variable
         self._h5group.create_dataset(
             h5name,
             shape,
@@ -620,23 +641,30 @@ class Group(Mapping):
             track_order=self._track_order,
             **kwargs,
         )
-        self._variables[h5name] = self._variable_cls(self, h5name, dimensions)
-        variable = self._variables[h5name]
+
+        # create variable class instance
+        variable = self._variable_cls(self, h5name, dimensions)
+        self._variables[h5name] = variable
+
+        # need to put coordinate variable into dimensions
+        if need_dim_adding:
+            self._dimensions.add(name)
 
         # Re-create dim-scale and re-attach references to coordinate variable.
-        if name in self.dimensions and h5name in self._h5group:
-            self._create_dim_scale(name, shape)
+        if name in self._all_dimensions and h5name in self._h5group:
+            self._all_dimensions[name].create_scale()
             if refs is not None:
-                self.dimensions[name].attach_scale(refs)
+                self._all_dimensions[name].attach_scale(refs)
 
         # In case of data variables attach dim_scales and coords.
-        if name in self.variables and h5name not in self.dimensions:
+        if name in self.variables and h5name not in self._dimensions:
             variable._attach_dim_scales()
             variable._attach_coords()
 
         # This is a bit of a hack, netCDF4 attaches _Netcdf4Dimid to every variable
         # when a variable is first written to, after variable creation.
         # Here we just attach it to every variable on creation.
+        # Todo: get this consistent with netcdf-c/netcdf4-python
         variable._ensure_dim_id()
 
         if fillvalue is not None:
@@ -647,10 +675,12 @@ class Group(Mapping):
     def create_variable(
         self, name, dimensions=(), dtype=None, data=None, fillvalue=None, **kwargs
     ):
+        # if root-variable
         if name.startswith("/"):
             return self._root.create_variable(
                 name[1:], dimensions, dtype, data, fillvalue, **kwargs
             )
+        # else split groups and iterate child groups
         keys = name.split("/")
         group = self
         for k in keys[:-1]:
@@ -682,46 +712,6 @@ class Group(Mapping):
 
     def __len__(self):
         return len(self.variables) + len(self.groups)
-
-    def _create_dim_scale(self, dim, size):
-        """Create HDF5 dimension scale."""
-        unlimited = size == 0
-        if dim not in self._h5group:
-            kwargs = {}
-            if unlimited:
-                kwargs["maxshape"] = (None,)
-            self._h5group.create_dataset(
-                name=dim,
-                shape=(size,),
-                dtype=">f4",
-                track_order=self._track_order,
-                **kwargs,
-            )
-
-        h5ds = self._h5group[dim]
-        h5ds.attrs["_Netcdf4Dimid"] = np.array(
-            self._dimensions[dim].dimid, dtype=np.int32
-        )
-
-        if len(h5ds.shape) > 1:
-            dims = self._variables[dim].dimensions
-            coord_ids = np.array([self._dimensions[d].dimid for d in dims], "int32")
-            h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
-
-        # need special handling for size in case of scalar and tuple
-        if not size:
-            size = 1
-        if isinstance(size, tuple):
-            size = size[0]
-        dimlen = bytes(f"{size:10}", "ascii")
-
-        scale_name = dim if dim in self.variables else NOT_A_VARIABLE + dimlen
-        # don't re-create scales if they already exist.
-        if not h5py.h5ds.is_scale(h5ds.id):
-            if version.parse(h5py.__version__) < version.parse("2.10.0"):
-                h5ds.dims.create_scale(h5ds, scale_name)
-            else:
-                h5ds.make_scale(scale_name)
 
     @property
     def parent(self):
@@ -780,40 +770,13 @@ class Group(Mapping):
         header = "<%s %r (%s members)>" % (self._cls_name, self.name, len(self))
         return "\n".join([header] + self._repr_body())
 
-    def resize_dimension(self, dim, size, resize_vars=True):
+    def resize_dimension(self, dim, size):
         """Resize a dimension to a certain size.
 
         It will pad with the underlying HDF5 data sets' fill values (usually
         zero) where necessary.
         """
-        if not self.dimensions[dim].isunlimited():
-            raise ValueError(
-                "Dimension '%s' is not unlimited and thus cannot be resized." % dim
-            )
-
-        # Needs resize in any case, if variable, if dimensions and if coordinate
-        if dim in self._h5group:
-            self._h5group[dim].resize((size,))
-
-        # Adapt recursively to all variables
-        if resize_vars:
-            self._resize_variables(dim, size)
-
-    def _resize_variables(self, dim, size, recurse=True):
-        """Resize variables"""
-        for var in self.variables.values():
-            new_shape = list(var._h5ds.shape)
-            for i, d in enumerate(var.dimensions):
-                if d == dim:
-                    new_shape[i] = size
-            new_shape = tuple(new_shape)
-            if new_shape != var._h5ds.shape:
-                var._h5ds.resize(new_shape)
-
-        # Recurse as dimensions are visible to this group and all child groups.
-        if recurse:
-            for i in self.groups.values():
-                i._resize_variables(dim, size)
+        self._dimensions[dim]._resize(size)
 
 
 class File(Group):

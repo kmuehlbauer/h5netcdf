@@ -478,7 +478,7 @@ def test_repr(tmp_local_or_remote_netcdf):
 
     d = f.dimensions
     assert "h5netcdf.Dimensions" in repr(d)
-    assert "x=<h5netcdf.Dimension '/x': size 4>" in repr(d)
+    assert "x=<h5netcdf.Dimension 'x': size 4>" in repr(d)
 
     g = f["subgroup"]
     assert "h5netcdf.Group" in repr(g)
@@ -490,9 +490,9 @@ def test_repr(tmp_local_or_remote_netcdf):
     assert "units" in repr(v)
 
     f.dimensions["temp"] = None
-    assert "temp: <h5netcdf.Dimension '/temp': size 0 (unlimited)>" in repr(f)
+    assert "temp: <h5netcdf.Dimension 'temp': size 0 (unlimited)>" in repr(f)
     f.resize_dimension("temp", 5)
-    assert "temp: <h5netcdf.Dimension '/temp': size 5 (unlimited)>" in repr(f)
+    assert "temp: <h5netcdf.Dimension 'temp': size 5 (unlimited)>" in repr(f)
 
     f.close()
 
@@ -1549,6 +1549,7 @@ def test_group_names(tmp_local_netcdf):
         name = ""
         for i in range(10):
             name = "/".join([name, f"group{i:02d}"])
+            print(ds[name].name)
             assert ds[name].name == name.split("/")[-1]
 
     with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
@@ -1556,6 +1557,7 @@ def test_group_names(tmp_local_netcdf):
         name = ""
         for i in range(10):
             name = "/".join([name, f"group{i:02d}"])
+            print(ds[name].name)
             assert ds[name].name == name.split("/")[-1]
 
     with h5netcdf.File(tmp_local_netcdf, "r") as ds:
@@ -1563,7 +1565,8 @@ def test_group_names(tmp_local_netcdf):
         name = ""
         for i in range(10):
             name = "/".join([name, f"group{i:02d}"])
-            assert ds[name].name == name
+            print(ds[name].name)
+            assert ds[name].name == name#.split("/")[-1]
 
 
 def test_legacyapi_endianess(tmp_local_netcdf):
@@ -1627,3 +1630,79 @@ def test_bool_slicing_length_one_dim(tmp_local_netcdf):
             assert error == str(e.value)
         else:
             ds["hello"][bool_slice, :]
+
+
+def test_issue(tmp_local_netcdf):
+    with h5netcdf.File("test.nc", "w") as f:
+        try:
+            f.create_variable("test", ("x", "y"), data=np.ones((10, 10), dtype="bool"))
+        except:
+            pass
+
+        assert f.dimensions.__repr__() == "<h5netcdf.Dimensions: >"
+
+
+def test_dimensions_parent_groups(tmp_local_netcdf):
+    with netCDF4.Dataset(tmp_local_netcdf, mode="w") as ds:
+        ds0 = ds
+        for i in range(10):
+            ds = ds.createGroup(f"group{i:02d}")
+        ds0.createDimension("x", 10)
+        ds0.createDimension("y", 20)
+        ds0["group00"].createVariable("test", float, ("x", "y"))
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        print(ds)
+        print(ds["group00"])
+        print(ds["group00"]._all_dimensions)
+        print(ds["group00"]._all_dimensions.maps[0])
+
+
+def test_dimensions_parent_groups1(tmp_local_netcdf):
+    with netCDF4.Dataset(tmp_local_netcdf, mode="w") as ds:
+        ds0 = ds
+        for i in range(10):
+            ds = ds.createGroup(f"group{i:02d}")
+        ds0.createDimension("x", 10)
+        ds0.createDimension("y", 20)
+        ds0["group00"].createVariable("test", float, ("x", "y"))
+        var = ds0["group00"].createVariable("x", float, ("x", "y"))
+        var[:] = np.ones((10, 20))
+
+    import subprocess
+    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test.nc"])
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        print(ds)
+        print(ds["group00"])
+        print(ds["group00"]._all_dimensions)
+        print(ds["group00"]._all_dimensions.maps[0])
+
+    with legacyapi.Dataset(tmp_local_netcdf, mode="w") as ds:
+        ds0 = ds
+        for i in range(10):
+            ds = ds.createGroup(f"group{i:02d}")
+        ds0.createDimension("x", 10)
+        ds0.createDimension("y", 20)
+        ds0["group00"].createVariable("test", float, ("x", "y"))
+        var = ds0["group00"].createVariable("x", float, ("x", "y"))
+        var[:] = np.ones((10, 20))
+
+    import subprocess
+    #subprocess.check_call(["h5dump", "-H", f"{tmp_local_netcdf}"])
+    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test1.nc"])
+    subprocess.check_call(["cp", f"{tmp_local_netcdf}", "test1.nc"])
+
+    #subprocess.check_call(["h5diff", "-v2", "test.nc", "test1.nc"])
+
+    with netCDF4.Dataset(tmp_local_netcdf, "r") as ds:
+        print(ds)
+        print(ds["group00"])
+
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        print("#############################################")
+        print(ds)
+        print(ds["group00"])
+        print(ds["group00"]._all_dimensions)
+        print(ds["group00"]._all_dimensions.maps[0])

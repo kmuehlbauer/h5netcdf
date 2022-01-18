@@ -3,6 +3,8 @@ from collections import OrderedDict
 from collections.abc import MutableMapping
 
 import h5py
+import numpy as np
+from packaging.version import Version
 
 
 class Dimensions(MutableMapping):
@@ -18,20 +20,17 @@ class Dimensions(MutableMapping):
         return self._objects[name]
 
     def __setitem__(self, name, size):
+        # creating new dimensions
         phony = "phony_dim" in name
         if not self._group._root._writable and not phony:
             raise RuntimeError("H5NetCDF: Write to read only")
         if name in self._objects:
             raise ValueError("dimension %r already exists" % name)
 
-        size = 0 if size is None else size
-        self._objects[name] = Dimension(self._group, name, size, phony=phony)
-
-        # create on write but do not create phony_dims
-        if self._group._root._writable and not phony:
-            self._group._create_dim_scale(name, size)
+        self._objects[name] = Dimension(self._group, name, size, create_h5ds=True)
 
     def add(self, name):
+        # this is for adding dimensions wich are already created
         self._objects[name] = Dimension(self._group, name)
 
     def __delitem__(self, key):
@@ -57,18 +56,20 @@ def _join_h5paths(parent_path, child_path):
 
 
 class Dimension(object):
-    def __init__(self, parent, name, size=None, phony=False):
+    def __init__(self, parent, name, size=None, create_h5ds=False):
         self._parent_ref = weakref.ref(parent)
-        self._phony = phony
+        self._phony = "phony_dim" in name
         self._root_ref = weakref.ref(parent._root)
         self._h5path = _join_h5paths(parent.name, name)
         self._name = name
-        self._size = size
-        if phony:
+        self._size = 0 if size is None else size
+        if self._phony:
             self._root._phony_dim_count += 1
         else:
             self._root._max_dim_id += 1
         self._dimid = self._root._max_dim_id
+        if parent._root._writable and create_h5ds and not self._phony:
+            self.create_scale()
         self._initialized = True
 
     @property
@@ -93,7 +94,7 @@ class Dimension(object):
     def name(self):
         if self.isphony:
             return self._name
-        return self._h5ds.name
+        return self._h5ds.name.split("/")[-1]
 
     def isunlimited(self):
         if self.isphony:
@@ -125,10 +126,65 @@ class Dimension(object):
                     size = max(var.shape[axis], size)
         return size
 
+    def _resize(self, size):
+        from .legacyapi import Dataset
+
+        if not self.isunlimited():
+            raise ValueError(
+                "Dimension '%s' is not unlimited and thus cannot be resized." % self.name
+            )
+        self._h5ds.resize((size,))
+
+        # resize all referenced datasets for new API
+        if not isinstance(self._root, Dataset):
+            refs = self.scale_refs
+            if refs:
+                for var, dim in refs:
+                    self._parent._all_h5groups[var].resize(size, dim)
+
     @property
     def scale_refs(self):
         """Return dimension scale references"""
         return list(self._h5ds.attrs.get("REFERENCE_LIST", []))
+
+    def create_scale(self):
+        """Create dimension scale for this dimension"""
+        if self._name not in self._parent._h5group:
+            kwargs = {}
+            if self._size is None or self._size == 0:
+                kwargs["maxshape"] = (None,)
+            self._parent._h5group.create_dataset(
+                name=self._name,
+                shape=(self._size,),
+                dtype=">f4",
+                track_order=self._parent._track_order,
+                **kwargs,
+            )
+        self._h5ds.attrs["_Netcdf4Dimid"] = np.array(
+            self._dimid, dtype=np.int32
+        )
+
+        if len(self._h5ds.shape) > 1:
+            dims = self._parent._variables[self._name].dimensions
+            coord_ids = np.array([self._parent._dimensions[d].dimid for d in dims], "int32")
+            self._h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
+
+        # need special handling for size in case of scalar and tuple
+        size = self._size
+        if not size:
+            size = 1
+        if isinstance(size, tuple):
+            size = size[0]
+        dimlen = bytes(f"{size:10}", "ascii")
+
+        NOT_A_VARIABLE = b"This is a netCDF dimension but not a netCDF variable."
+        scale_name = self.name if self.name in self._parent._variables else NOT_A_VARIABLE + dimlen
+        # don't re-create scales if they already exist.
+        if not h5py.h5ds.is_scale(self._h5ds.id):
+            if Version(h5py.__version__) < Version("2.10.0"):
+                self._h5ds.dims.create_scale(self._h5ds, scale_name)
+            else:
+                self._h5ds.make_scale(scale_name)
 
     def attach_scale(self, refs):
         """Attach dimension scale to references"""
