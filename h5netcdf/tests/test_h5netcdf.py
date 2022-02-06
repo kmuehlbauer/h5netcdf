@@ -1807,3 +1807,66 @@ def test_dimensions_in_parent_groups():
             assert repr(ds0["group00"]) == repr(ds1["group00"])
             assert repr(ds0["group00"]["test"]) == repr(ds1["group00"]["test"])
             assert repr(ds0["group00"]["x"]) == repr(ds1["group00"]["x"])
+
+
+def test_array_attributes(tmp_local_netcdf):
+    with h5netcdf.File(tmp_local_netcdf, "w") as ds:
+        dt = h5py.string_dtype()
+        ds.attrs["string0"] = np.array("string0", dtype=dt)
+        ds.attrs["string1"] = np.array(["string1"], dtype=dt)
+        ds.attrs["string2"] = np.array(["string1", "string2"], dtype=dt)
+        ds.attrs["arr0"] = ["arr"]
+        ds.attrs["arr1"] = 1
+        ds.attrs["arr2"] = [1]
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        assert ds.attrs["string0"] == "string0"
+        assert ds.attrs["string1"] == "string1"
+        np.testing.assert_equal(ds.attrs["string2"], ["string1", "string2"])
+        assert ds.attrs["arr0"] == "arr"
+        assert isinstance(ds.attrs["arr0"], str)
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        print("\nattrs changed file with h5netcdf:")
+        print(ds.attrs)
+
+    with legacyapi.Dataset(tmp_local_netcdf, mode="r") as ds:
+        print("\nattrs changed file with legacyapi:")
+        print(ds.attrs)
+
+    with netCDF4.Dataset(tmp_local_netcdf, mode="r") as f:
+        print("\nattrs changed file with netCDF4:")
+        for attr in f.ncattrs():
+            print(f"{attr}: {getattr(f, attr)!r}")
+
+
+def test_attributes_decoding(tmp_local_netcdf):
+    # todo: fix this test
+    with h5netcdf.File(tmp_local_netcdf, "w") as ds:
+        dt = h5py.string_dtype()
+        ds.attrs["string0"] = np.array("string0", dtype=dt)
+        ds.attrs["string1"] = np.array(["string1"], dtype=dt)
+        ds.attrs["string2"] = np.array(["string1", "string2"], dtype=dt)
+        ds.attrs["arr0"] = ["arr"]
+        ds.attrs["arr1"] = 1
+        ds.attrs["arr2"] = [1]
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        assert ds.attrs["string0"] == "string0"
+        assert ds.attrs["string1"] == "string1"
+        np.testing.assert_equal(ds.attrs["string2"], ["string1", "string2"])
+        assert ds.attrs["arr0"] == "arr"
+        assert isinstance(ds.attrs["arr0"], str)
+
+    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+        print("\nattrs changed file with h5netcdf:")
+        print(ds.attrs)
+
+    with legacyapi.Dataset(tmp_local_netcdf, mode="r") as ds:
+        print("\nattrs changed file with legacyapi:")
+        print(ds.attrs)
+
+    with netCDF4.Dataset(tmp_local_netcdf, mode="r") as f:
+        print("\nattrs changed file with netCDF4:")
+        for attr in f.ncattrs():
+            print(f"{attr}: {getattr(f, attr)!r}")

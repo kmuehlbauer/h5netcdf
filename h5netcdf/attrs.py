@@ -26,11 +26,36 @@ class Attributes(MutableMapping):
 
         if key in _HIDDEN_ATTRS:
             raise KeyError(key)
+
         # see https://github.com/h5netcdf/h5netcdf/issues/94 for details
         if isinstance(self._h5attrs[key], h5py.Empty):
             string_info = h5py.check_string_dtype(self._h5attrs[key].dtype)
             if string_info and string_info.length == 1:
                 return b""
+
+        # see https://github.com/h5netcdf/h5netcdf/issues/116 for details
+        # check if 0-dim or one-element 1-dim and return extracted item()
+        # Todo: only for legacyapi? otherwise return list (netCDF4-like)
+        try:
+            if self._h5attrs[key].shape in [(), (1,)]:
+                return self._h5attrs[key].item()
+            else:
+                return list(self._h5attrs[key])
+        except AttributeError as e:
+            if "object has no attribute 'shape'" not in e.args[0]:
+                raise
+
+        # check if fixed-length attribute and decode correctly
+        # Todo: only only for legacyapi?
+        try:
+            string_info = h5py.check_string_dtype(self._h5attrs[key].dtype)
+            if string_info is not None and string_info[1] is not None:
+                encoding = string_info[0]
+                return self._h5attrs[key].decode(encoding)
+        except AttributeError as e:
+            if "object has no attribute 'dtype'" not in e.args[0]:
+                raise
+
         return self._h5attrs[key]
 
     def __setitem__(self, key, value):
