@@ -224,6 +224,9 @@ def write_h5netcdf(tmp_netcdf):
 
 
 def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
+    import subprocess
+    print(subprocess.check_call(["ncdump", f"{tmp_netcdf}"]))
+    print(subprocess.check_call(["h5dump", "-p", f"{tmp_netcdf}"]))
     ds = read_module.Dataset(tmp_netcdf, "r")
     assert ds.ncattrs() == ["global", "other_attr"]
     assert ds.getncattr("global") == 42
@@ -329,6 +332,9 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module):
 
 
 def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
+    import subprocess
+    print(subprocess.check_call(["ncdump", f"{tmp_netcdf}"]))
+    print(subprocess.check_call(["h5dump", "-p", f"{tmp_netcdf}"]))
     remote_file = isinstance(tmp_netcdf, str) and tmp_netcdf.startswith(remote_h5)
     ds = h5netcdf.File(tmp_netcdf, "r", **decode_vlen_strings)
     assert ds.name == "/"
@@ -435,6 +441,7 @@ def read_h5netcdf(tmp_netcdf, write_module, decode_vlen_strings):
     assert ds["/subgroup"].dimensions["y"].size == 10
 
     ds.close()
+    import subprocess
 
 
 def roundtrip_legacy_netcdf(tmp_netcdf, read_module, write_module):
@@ -1810,34 +1817,127 @@ def test_dimensions_in_parent_groups():
 
 
 def test_array_attributes(tmp_local_netcdf):
-    with h5netcdf.File(tmp_local_netcdf, "w") as ds:
-        dt = h5py.string_dtype()
-        ds.attrs["string0"] = np.array("string0", dtype=dt)
-        ds.attrs["string1"] = np.array(["string1"], dtype=dt)
-        ds.attrs["string2"] = np.array(["string1", "string2"], dtype=dt)
-        ds.attrs["arr0"] = ["arr"]
-        ds.attrs["arr1"] = 1
-        ds.attrs["arr2"] = [1]
+    with h5py.File(tmp_local_netcdf, "w") as ds:
+        # vlen
+        dt_vlen_utf8 = h5py.string_dtype("utf-8")
+        dt_vlen_ascii = h5py.string_dtype("ascii")
+        # fixed
+        dt_fixed_utf8 = h5py.string_dtype("utf-8", 10)
+        dt_fixed_ascii = h5py.string_dtype("ascii", 10)
 
-    with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
-        assert ds.attrs["string0"] == "string0"
-        assert ds.attrs["string1"] == "string1"
-        np.testing.assert_equal(ds.attrs["string2"], ["string1", "string2"])
-        assert ds.attrs["arr0"] == "arr"
-        assert isinstance(ds.attrs["arr0"], str)
+        ds.attrs["unicode"] = u"unicodé"
+        ds.attrs["string"] = "string"
+        ds.attrs["bytes"] = b"string"
+
+        ds.attrs["vlen_unicode"] = np.array("unicodé", dtype=dt_vlen_utf8)
+        ds.attrs["vlen_ascii"] = np.array("ascii", dtype=dt_vlen_ascii)
+        ds.attrs["fixed_unicode"] = np.array("unicodé".encode("utf-8"), dtype=dt_fixed_utf8)
+        ds.attrs["fixed_ascii"] = np.array("ascii".encode("ascii"), dtype=dt_fixed_ascii)
+        ds.attrs["vlen_unicode_arr"] = np.array(["unicodé", "unicodè"], dtype=dt_vlen_utf8)
+        ds.attrs["vlen_ascii_arr"] = np.array(["ascii", "ascii"], dtype=dt_vlen_ascii)
+        ds.attrs["fixed_unicode_arr"] = np.array(["unicodé".encode("utf-8"), "unicodé".encode("utf-8")],
+                                                dtype=dt_fixed_utf8)
+        ds.attrs["fixed_ascii_arr"] = np.array(["ascii".encode("ascii"), "ascii".encode("ascii")], dtype=dt_fixed_ascii)
+
+    def get_item(loc, name):
+        attr = h5py.h5a.open(loc._id, loc._e(name))
+
+        if h5py._hl.attrs.is_empty_dataspace(attr):
+            return h5py._hl.base.Empty(attr.dtype)
+
+        dtype = attr.dtype
+        shape = attr.shape
+
+        # Do this first, as we'll be fiddling with the dtype for top-level
+        # array types
+        htype = h5py.h5t.py_create(dtype)
+
+        # NumPy doesn't support top-level array types, so we have to "fake"
+        # the correct type and shape for the array.  For example, consider
+        # attr.shape == (5,) and attr.dtype == '(3,)f'. Then:
+        if dtype.subdtype is not None:
+            subdtype, subshape = dtype.subdtype
+            shape = attr.shape + subshape  # (5, 3)
+            dtype = subdtype  # 'f'
+
+        arr = np.ndarray(shape, dtype=dtype, order='C')
+        attr.read(arr, mtype=htype)
+
+        string_info = h5py.h5t.check_string_dtype(dtype)
+        print("DTYPE:", dtype, string_info)
+        if string_info and (string_info.length is None):
+            # Vlen strings: convert bytes to Python str
+            arr = np.array([
+                b.decode('utf-8', 'surrogateescape') for b in arr.flat
+            ], dtype=dtype).reshape(arr.shape)
+
+        #if len(arr.shape) == 0:
+        #    return arr[()]
+        return arr
+
+    with h5py.File(tmp_local_netcdf, mode="r") as ds:
+        print("\noutput")
+        for k, v in ds.attrs.items():
+            #v = get_item(ds.attrs, k)
+            try:
+                dtype = v.dtype
+                string_info = h5py.check_string_dtype(v.dtype)
+            except:
+                string_info = None
+                dtype = None
+            finally:
+                print(k, v, dtype, string_info)
+        #print("dtype0:", get_item(ds.attrs, "fixed_unicode").dtype)
+        #print("---si:", h5py.check_string_dtype(get_item(ds.attrs, "fixed_unicode").dtype))
+        #print("dtype1:", ds.attrs["fixed_unicode"].dtype)
+        #print("---si:", h5py.check_string_dtype(ds.attrs["fixed_unicode"].dtype))
+
+    # with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
+    #     #ds.set
+    #     ds.bytes = np.array(b"bytes")
+    #     ds.setncattr_string("string", "string")
+    #     ds.setncattr("string1", "string1")
+    #     ds.unicode = u"unicodé"
+
+
+        #ds.unicode = u"unicodé"
+        #ds.unicode = u"unicodé"
+
+    import subprocess
+
+    print(subprocess.check_call(["ncdump", f"{tmp_local_netcdf}"]))
+    print(subprocess.check_call(["h5dump", "-p", f"{tmp_local_netcdf}"]))
+
+
+        # dt = h5py.string_dtype()
+        # ds.attrs["string0"] = np.array("string0", dtype=dt)
+        # ds.attrs["string1"] = np.array(["string1"], dtype=dt)
+        # ds.attrs["string2"] = np.array(["string1", "string2"], dtype=dt)
+        # ds.attrs["arr0"] = ["arr"]
+        # ds.attrs["arr1"] = 1
+        # ds.attrs["arr2"] = [1]
+
+    # with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
+    #     assert ds.attrs["string0"] == "string0"
+    #     assert ds.attrs["string1"] == "string1"
+    #     np.testing.assert_equal(ds.attrs["string2"], ["string1", "string2"])
+    #     assert ds.attrs["arr0"] == "arr"
+    #     assert isinstance(ds.attrs["arr0"], str)
 
     with h5netcdf.File(tmp_local_netcdf, mode="r") as ds:
         print("\nattrs changed file with h5netcdf:")
-        print(ds.attrs)
+        for k, v in ds.attrs.items():
+            print(f"{k}: {v!r} {v} {type(v)}")
 
     with legacyapi.Dataset(tmp_local_netcdf, mode="r") as ds:
         print("\nattrs changed file with legacyapi:")
-        print(ds.attrs)
+        for k, v in ds.attrs.items():
+            print(f"{k}: {v!r} {type(v)}")
 
     with netCDF4.Dataset(tmp_local_netcdf, mode="r") as f:
         print("\nattrs changed file with netCDF4:")
         for attr in f.ncattrs():
-            print(f"{attr}: {getattr(f, attr)!r}")
+            print(f"{attr}: {getattr(f, attr)!r} {type(getattr(f, attr))}")
 
 
 def test_attributes_decoding(tmp_local_netcdf):
