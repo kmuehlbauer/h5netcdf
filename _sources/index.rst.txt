@@ -6,7 +6,7 @@
 h5netcdf: A Python interface for the netCDF4 file-format based on h5py
 ======================================================================
 
-:Release: `0.15.0.dev1+g0867bc7.d20220315 <https://github.com/h5netcdf/h5netcdf/tree/0867bc7>`_
+:Release: `0.15.0.dev1+g7277d00 <https://github.com/h5netcdf/h5netcdf/tree/7277d00>`_
 :Date: |today|
 
 **h5netcdf** is an open source project and Python package that provides an interface
