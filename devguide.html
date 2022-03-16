@@ -5,7 +5,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Developers Guide &#8212; h5netcdf - 0.15.0.dev1+g7277d00</title>
+    <title>Developers Guide &#8212; h5netcdf - 0.15.0.dev1+g2ffeb9e</title>
     
   <link href="_static/css/theme.css" rel="stylesheet">
   <link href="_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
@@ -64,7 +64,7 @@
       
       
       
-      <h1 class="site-logo" id="site-title">h5netcdf - 0.15.0.dev1+g7277d00</h1>
+      <h1 class="site-logo" id="site-title">h5netcdf - 0.15.0.dev1+g2ffeb9e</h1>
       
     </a>
 </div><form class="bd-search d-flex align-items-center" action="search.html" method="get">
@@ -298,8 +298,23 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#continuous-integration">
+   Continuous Integration
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#documentation">
+   Documentation
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#release-workflow">
    Release Workflow
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#references">
+   References
   </a>
  </li>
 </ul>
@@ -338,8 +353,23 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#continuous-integration">
+   Continuous Integration
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#documentation">
+   Documentation
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#release-workflow">
    Release Workflow
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#references">
+   References
   </a>
  </li>
 </ul>
@@ -389,6 +419,31 @@
 <li><p>Releases should be introduced via Pull Request and approved. Exception: Patch release after hotfix.</p></li>
 </ul>
 </div>
+<div class="section" id="continuous-integration">
+<h2>Continuous Integration<a class="headerlink" href="#continuous-integration" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">h5netcdf</span></code> uses GitHub Actions for Continuous Integration (CI). On every <code class="docutils literal notranslate"><span class="pre">push</span></code> to a repository branch
+or a PullRequest branch several checks are performed:</p>
+<ul class="simple">
+<li><p>Lint checks (<code class="docutils literal notranslate"><span class="pre">flake8</span></code>, <code class="docutils literal notranslate"><span class="pre">isort</span></code>, <code class="docutils literal notranslate"><span class="pre">black</span></code>)</p></li>
+<li><p>Unit tests with <code class="docutils literal notranslate"><span class="pre">h5py2=2.10.0</span></code> (Python 3.7, 3.8, 3.9) on Ubuntu</p></li>
+<li><p>Unit tests with latest <code class="docutils literal notranslate"><span class="pre">h5py3</span></code> (Python 3.7, 3.8, 3.9, 3.10) on Ubuntu</p></li>
+<li><p>Documentation build, artifacts are made availabe to download</p></li>
+<li><p>On release, source-tarball and universal wheel is uploaded to PyPI and documentation is made available
+on <a class="reference external" href="https://h5netcdf.github.io/h5netcdf">h5netcdf GitHub Pages</a></p></li>
+</ul>
+</div>
+<div class="section" id="documentation">
+<h2>Documentation<a class="headerlink" href="#documentation" title="Permalink to this headline">¶</a></h2>
+<p>The documentation, located in <code class="docutils literal notranslate"><span class="pre">doc</span></code>-folder, can be created using <code class="docutils literal notranslate"><span class="pre">sphinx-doc</span></code> and the <code class="docutils literal notranslate"><span class="pre">sphinx-book_theme</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ cd doc
+$ make html
+</pre></div>
+</div>
+<p>The rendered documentation is then available in the subfolder <code class="docutils literal notranslate"><span class="pre">_build</span></code>.</p>
+<p>Due to the history several documents, eg. <a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/main/README.rst">README.rst</a> and <a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/main/CHANGELOG.rst">CHANGELOG.rst</a>, are located in the project’s root folder.
+They are linked into the documentation via <code class="docutils literal notranslate"><span class="pre">..</span> <span class="pre">include</span></code>-directive. Links and cross-references originating from these files
+should be hardcoded to maintain operation also in non-rendered format.</p>
+</div>
 <div class="section" id="release-workflow">
 <h2>Release Workflow<a class="headerlink" href="#release-workflow" title="Permalink to this headline">¶</a></h2>
 <ol class="arabic simple">
@@ -414,6 +469,28 @@
 </li>
 </ol>
 <p>This will start the CI workflow once again. The workflow creates <cite>sdist</cite> and universal <cite>wheel</cite> and uploads it to PyPI.</p>
+</div>
+<div class="section" id="references">
+<h2>References<a class="headerlink" href="#references" title="Permalink to this headline">¶</a></h2>
+<p>This section contains links to material how <code class="docutils literal notranslate"><span class="pre">netCDF4</span></code> facilitates <code class="docutils literal notranslate"><span class="pre">HDF5</span></code>.</p>
+<p>Some valuable links on dimension scales:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.unidata.ucar.edu/blogs/developer/en/entry/dimensions_scales">HDF5 Dimension Scales</a></p></li>
+<li><p><a class="reference external" href="https://www.unidata.ucar.edu/blogs/developer/en/entry/dimension_scale2">HDF5 Dimension Scales Part 2</a></p></li>
+<li><p><a class="reference external" href="https://www.unidata.ucar.edu/blogs/developer/en/entry/dimension_scales_part_3">HDF5 Dimension Scales Part 3</a></p></li>
+<li><p><a class="reference external" href="https://www.unidata.ucar.edu/blogs/developer/en/entry/netcdf4_shared_dimensions">NetCDF-4 Dimensions and HDF5 Dimension Scales</a></p></li>
+<li><p><a class="reference external" href="https://www.unidata.ucar.edu/blogs/developer/en/entry/netcdf4_use_of_dimension_scales">NetCDF-4 use of dimension scales</a></p></li>
+</ul>
+<p>Other resources</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.researchgate.net/publication/330347054_2A5_NETCDF-4_PERFORMANCE_IMPROVEMENTS_OPENING_COMPLEX_DATA_FILES">NetCDF-4 performance</a></p></li>
+<li><p><a class="reference external" href="https://github.com/PyTables/PyTables/issues/264">String **NULLTERM**  vs. **NULLPAD**</a></p></li>
+</ul>
+<p>netCDF4-python quirks:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">_Netcdf4Dimid</span></code> gets attached to all data variables if a 2D coordinate variable is created  and any variable is written/file is reopened for append, see <a class="reference external" href="https://github.com/Unidata/netcdf4-python/issues/1104">issue 1104</a></p></li>
+<li><p>unlimited variable dimensions are reported as current size of the dimension scale, even if the variable’s underlying <code class="docutils literal notranslate"><span class="pre">DATASPACE</span></code> dimension is smaller (eg. 0)</p></li>
+</ul>
 </div>
 </div>
 

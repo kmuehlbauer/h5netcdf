@@ -5,7 +5,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>h5netcdf &#8212; h5netcdf - 0.15.0.dev1+g7277d00</title>
+    <title>h5netcdf &#8212; h5netcdf - 0.15.0.dev1+g2ffeb9e</title>
     
   <link href="_static/css/theme.css" rel="stylesheet">
   <link href="_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
@@ -34,7 +34,7 @@
     <script src="_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="legacyapi vs new api feature comparison" href="feature.html" />
+    <link rel="next" title="legacyapi vs new API feature comparison" href="feature.html" />
     <link rel="prev" title="h5netcdf: A Python interface for the netCDF4 file-format based on h5py" href="index.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="en">
@@ -64,7 +64,7 @@
       
       
       
-      <h1 class="site-logo" id="site-title">h5netcdf - 0.15.0.dev1+g7277d00</h1>
+      <h1 class="site-logo" id="site-title">h5netcdf - 0.15.0.dev1+g2ffeb9e</h1>
       
     </a>
 </div><form class="bd-search d-flex align-items-center" action="search.html" method="get">
@@ -428,9 +428,9 @@
   <div class="section" id="h5netcdf">
 <h1>h5netcdf<a class="headerlink" href="#h5netcdf" title="Permalink to this headline">¶</a></h1>
 <a class="reference external image-reference" href="https://github.com/h5netcdf/h5netcdf/actions"><img alt="https://github.com/h5netcdf/h5netcdf/workflows/CI/badge.svg" src="https://github.com/h5netcdf/h5netcdf/workflows/CI/badge.svg" /></a>
-<a class="reference external image-reference" href="https://pypi.python.org/pypi/h5netcdf/"><img alt="https://badge.fury.io/py/h5netcdf.svg" src="https://badge.fury.io/py/h5netcdf.svg" /></a>
-<p>A Python interface for the <a class="reference external" href="http://www.unidata.ucar.edu/software/netcdf/docs/file_format_specifications.html#netcdf_4_spec">netCDF4</a> file-format that reads and writes local or
-remote HDF5 files directly via <a class="reference external" href="http://www.h5py.org/">h5py</a> or <a class="reference external" href="https://github.com/HDFGroup/h5pyd">h5pyd</a>, without relying on the Unidata
+<a class="reference external image-reference" href="https://pypi.org/project/h5netcdf/"><img alt="https://badge.fury.io/py/h5netcdf.svg" src="https://badge.fury.io/py/h5netcdf.svg" /></a>
+<p>A Python interface for the <a class="reference external" href="https://docs.unidata.ucar.edu/netcdf-c/current/file_format_specifications.html#netcdf_4_spec">netCDF4</a> file-format that reads and writes local or
+remote HDF5 files directly via <a class="reference external" href="https://www.h5py.org/">h5py</a> or <a class="reference external" href="https://github.com/HDFGroup/h5pyd">h5pyd</a>, without relying on the Unidata
 netCDF library.</p>
 <div class="section" id="why-h5netcdf">
 <h2>Why h5netcdf?<a class="headerlink" href="#why-h5netcdf" title="Permalink to this headline">¶</a></h2>
@@ -451,7 +451,8 @@ bugs in the netCDF libraries/specification.</p></li>
 </div>
 <div class="section" id="install">
 <h2>Install<a class="headerlink" href="#install" title="Permalink to this headline">¶</a></h2>
-<p>Ensure you have a recent version of h5py installed (I recommend using <a class="reference external" href="http://conda.io/">conda</a>).
+<p>Ensure you have a recent version of h5py installed (I recommend using <a class="reference external" href="https://conda.io/">conda</a> or
+the community effort <a class="reference external" href="https://conda-forge.org/">conda-forge</a>).
 At least version 2.1 is required (for dimension scales); versions 2.3 and newer
 have been verified to work, though some tests only pass on h5py 2.6. Then:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ pip install h5netcdf
@@ -543,7 +544,7 @@ exact match. Here is an incomplete list of functionality we don’t include:</p>
 for writing netCDF files.</p></li>
 <li><p>h5netcdf variables do not support automatic masking or scaling (e.g., of values matching
 the <code class="docutils literal notranslate"><span class="pre">_FillValue</span></code> attribute). We prefer to leave this functionality to client libraries
-(e.g., <a class="reference external" href="http://github.com/pydata/xarray/">xarray</a>), which can implement their exact desired scaling behavior. Nevertheless
+(e.g., <a class="reference external" href="https://github.com/pydata/xarray/">xarray</a>), which can implement their exact desired scaling behavior. Nevertheless
 arrays are returned padded with <code class="docutils literal notranslate"><span class="pre">fillvalue</span></code> (taken from underlying hdf5 dataset) up to
 current size of variable’s dimensions. The behaviour is equivalent to netCDF4-python’s
 <code class="docutils literal notranslate"><span class="pre">Dataset.set_auto_mask(False)</span></code>.</p></li>
@@ -611,7 +612,7 @@ automatic decoding.</p>
 <p>By default <a class="footnote-reference brackets" href="#id4" id="id3">2</a> h5netcdf raises a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> if variables with no dimension
 scale associated with one of their axes are accessed.
 You can set <code class="docutils literal notranslate"><span class="pre">phony_dims='sort'</span></code> when opening a file to let h5netcdf invent
-phony dimensions according to <a class="reference external" href="https://www.unidata.ucar.edu/software/netcdf/docs/interoperability_hdf5.html">netCDF</a> behaviour.</p>
+phony dimensions according to <a class="reference external" href="https://docs.unidata.ucar.edu/netcdf-c/current/interoperability_hdf5.html">netCDF</a> behaviour.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># mimic netCDF-behaviour for non-netcdf files</span>
 <span class="n">f</span> <span class="o">=</span> <span class="n">h5netcdf</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="s1">&#39;mydata.h5&#39;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">phony_dims</span><span class="o">=</span><span class="s1">&#39;sort&#39;</span><span class="p">)</span>
 <span class="o">...</span>
@@ -621,7 +622,7 @@ phony dimensions according to <a class="reference external" href="https://www.un
 on performance in case you rely on laziness of group access.
 You can set <code class="docutils literal notranslate"><span class="pre">phony_dims='access'</span></code> instead to defer phony dimension creation
 to group access time. The created phony dimension naming will differ from
-<a class="reference external" href="https://www.unidata.ucar.edu/software/netcdf/docs/interoperability_hdf5.html">netCDF</a> behaviour.</p>
+<a class="reference external" href="https://docs.unidata.ucar.edu/netcdf-c/current/interoperability_hdf5.html">netCDF</a> behaviour.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">f</span> <span class="o">=</span> <span class="n">h5netcdf</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="s1">&#39;mydata.h5&#39;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">phony_dims</span><span class="o">=</span><span class="s1">&#39;access&#39;</span><span class="p">)</span>
 <span class="o">...</span>
 </pre></div>
@@ -646,11 +647,11 @@ newer versions of h5netcdf will continue to disable order tracker.</p>
 </div>
 <div class="section" id="changelog">
 <h2>Changelog<a class="headerlink" href="#changelog" title="Permalink to this headline">¶</a></h2>
-<p><a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/master/CHANGELOG.rst">Changelog</a></p>
+<p><a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/main/CHANGELOG.rst">Changelog</a></p>
 </div>
 <div class="section" id="license">
 <h2>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h2>
-<p><a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/master/LICENSE">3-clause BSD</a></p>
+<p><a class="reference external" href="https://github.com/h5netcdf/h5netcdf/blob/main/LICENSE">3-clause BSD</a></p>
 </div>
 </div>
 
@@ -670,7 +671,7 @@ newer versions of h5netcdf will continue to disable order tracker.</p>
     <a class='right-next' id="next-link" href="feature.html" title="next page">
     <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">legacyapi vs new api feature comparison</p>
+        <p class="prev-next-title">legacyapi vs new API feature comparison</p>
     </div>
     <i class="fas fa-angle-right"></i>
     </a>
