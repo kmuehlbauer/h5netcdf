@@ -137,17 +137,7 @@ class BaseObject:
         return self._h5ds.dtype
 
 
-class EnumType(BaseObject):
-    _cls_name = "h5netcdf.EnumType"
-
-    def __init__(self, parent, name):
-        """Create netCDF4 EnumType."""
-        super().__init__(parent, name)
-
-    @property
-    def enum_dict(self):
-        return self.dtype.metadata["enum"]
-
+class UserType(BaseObject):
     @property
     def name(self):
         """Return enum name."""
@@ -156,9 +146,32 @@ class EnumType(BaseObject):
 
     def __repr__(self):
         if self._parent._root._closed:
-            return "<Closed %s>" % self._cls_name
-        header = f"<{self._cls_name}: name = {self.name!r}, numpy dtype = {self.dtype}, fields/values =  {self.enum_dict}"
+            return f"<Closed {self._cls_name!r}>"
+        header = f"<class {self._cls_name!r}: name = {self.name!r}, numpy dtype = {self.dtype!r}"
         return header
+
+
+class EnumType(UserType):
+    _cls_name = "h5netcdf.EnumType"
+
+    @property
+    def enum_dict(self):
+        return self.dtype.metadata["enum"]
+
+    def __repr__(self):
+        return super().__repr__() + f", fields / values = {self.enum_dict!r}"
+
+
+class VLType(UserType):
+    _cls_name = "h5netcdf.VLType"
+
+
+class CompoundType(UserType):
+    _cls_name = "h5netcdf.CompoundType"
+
+    @property
+    def dtype_view(self):
+        return self.dtype_view
 
 
 class BaseVariable(BaseObject):
@@ -246,7 +259,7 @@ class BaseVariable(BaseObject):
             [self._parent._all_dimensions[d]._dimid for d in dims],
             "int32",
         )
-        if len(coord_ids) > 1:
+        if len(coord_ids) >= 1:
             self._h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
 
     def _ensure_dim_id(self):
@@ -528,6 +541,8 @@ class Group(Mapping):
     _variable_cls = Variable
     _dimension_cls = Dimension
     _enumtype_cls = EnumType
+    _vltype_cls = VLType
+    _cmptype_cls = CompoundType
 
     @property
     def _group_cls(self):
@@ -545,15 +560,21 @@ class Group(Mapping):
 
         self._dimensions = Dimensions(self)
         self._enumtypes = _LazyObjectLookup(self, self._enumtype_cls)
+        self._vltypes = _LazyObjectLookup(self, self._vltype_cls)
+        self._cmptypes = _LazyObjectLookup(self, self._cmptype_cls)
 
         # this map keeps track of all dimensions
         if parent is self:
             self._all_dimensions = ChainMap(self._dimensions)
             self._all_enumtypes = ChainMap(self._enumtypes)
+            self._all_vltypes = ChainMap(self._vltypes)
+            self._all_cmptypes = ChainMap(self._cmptypes)
         else:
             self._all_dimensions = parent._all_dimensions.new_child(self._dimensions)
             self._all_h5groups = parent._all_h5groups.new_child(self._h5group)
             self._all_enumtypes = parent._all_enumtypes.new_child(self._enumtypes)
+            self._all_vltypes = parent._all_vltypes.new_child(self._vltypes)
+            self._all_cmptypes = parent._all_cmptypes.new_child(self._cmptypes)
 
         self._variables = _LazyObjectLookup(self, self._variable_cls)
         self._groups = _LazyObjectLookup(self, self._group_cls)
@@ -567,11 +588,14 @@ class Group(Mapping):
                 # add to the groups collection if this is a h5py(d) Group
                 # instance
                 self._groups.add(k)
-            # todo: add other user types here
-            elif isinstance(
-                v, self._root._h5py.Datatype
-            ) and self._root._h5py.check_enum_dtype(v.dtype):
-                self._enumtypes.add(k)
+            # user defined types
+            elif isinstance(v, self._root._h5py.Datatype):
+                if self._root._h5py.check_enum_dtype(v.dtype):
+                    self._enumtypes.add(k)
+                elif self._root._h5py.check_vlen_dtype(v.dtype):
+                    self._vltypes.add(k)
+                elif v.dtype.names is not None or "complex" in v.dtype.name:
+                    self._cmptypes.add(k)
             else:
                 if v.attrs.get("CLASS") == b"DIMENSION_SCALE":
                     # add dimension and retrieve size
@@ -724,11 +748,26 @@ class Group(Mapping):
         else:
             self._root._check_valid_netcdf_dtype(dtype)
 
+        # compound type handling
+        if np.dtype(dtype).kind == "c":
+            if not isinstance(dtype, CompoundType) and self._root._auto_complex:
+                # todo check compound types for
+                #  existing complex types which may be used
+                itemsize = np.dtype(dtype).itemsize
+                if itemsize == 8:
+                    width = "FLOAT"
+                elif itemsize == 16:
+                    width = "DOUBLE"
+                dname = f"_PFNC_{width}_COMPLEX_TYPE"
+                dtype = self._all_cmptypes.get(
+                    dname, self.create_cmptype(np.dtype(dtype), dname)
+                )
+
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
                 "scale-offset filters",
                 self._root.invalid_netcdf,
-            )
+        )
 
         # maybe create new dimensions depending on data
         if data is not None:
@@ -807,7 +846,6 @@ class Group(Mapping):
         fillval = fillvalue
         if fillvalue is None and isinstance(self._parent._root, Dataset):
             fillval = _get_default_fillvalue(dtype)
-
         # create hdf5 variable
         self._h5group.create_dataset(
             h5name,
@@ -842,7 +880,7 @@ class Group(Mapping):
         # when a variable is first written to, after variable creation.
         # Here we just attach it to every variable on creation.
         # Todo: get this consistent with netcdf-c/netcdf4-python
-        variable._ensure_dim_id()
+        # variable._ensure_dim_id()
 
         if fillvalue is not None:
             # trying to create correct type of fillvalue
@@ -862,6 +900,7 @@ class Group(Mapping):
                     value = variable.dtype.type(fillvalue)
 
             variable.attrs._h5attrs["_FillValue"] = value
+
         return variable
 
     def create_variable(
@@ -1002,6 +1041,14 @@ class Group(Mapping):
         return Frozen(self._enumtypes)
 
     @property
+    def vltypes(self):
+        return Frozen(self._vltypes)
+
+    @property
+    def cmptypes(self):
+        return Frozen(self._cmptypes)
+
+    @property
     def dims(self):
         return Frozen(self._dimensions)
 
@@ -1067,6 +1114,38 @@ class Group(Mapping):
         self._enumtypes[datatype_name] = enumtype
         return enumtype
 
+    def create_vltype(self, datatype, datatype_name):
+        """Create VLType.
+
+        datatype: np.dtype
+            A numpy dtype object describing the base type.
+        datatype_name: string
+            A Python string containing a description of the VL data type.
+        """
+        et = self._root._h5py.vlen_dtype(datatype)
+        self._h5group[datatype_name] = et
+        # create vltype class instance
+        vltype = self._vltype_cls(self, datatype_name)
+        self._vltypes[datatype_name] = vltype
+        return vltype
+
+    def create_cmptype(self, datatype, datatype_name):
+        """Create VLType.
+
+        datatype: np.dtype
+            A numpy dtype object describing the structured type.
+        datatype_name: string
+            A Python string containing a description of the compound data type.
+        """
+        # we need to use low level create/commit methods
+        et = self._root._h5py.h5t.py_create(datatype)
+        # h5py will otherwise convert to 'O'-type
+        et.commit(self._h5group.id, datatype_name.encode())
+        # create compound class instance
+        cmptype = self._cmptype_cls(self, datatype_name)
+        self._cmptypes[datatype_name] = cmptype
+        return cmptype
+
 
 class File(Group):
     def __init__(self, path, mode="r", invalid_netcdf=False, phony_dims=None, **kwargs):
@@ -1127,6 +1206,7 @@ class File(Group):
         track_order = kwargs.pop("track_order", track_order_default)
 
         self.decode_vlen_strings = kwargs.pop("decode_vlen_strings", None)
+        self._auto_complex = kwargs.pop("auto_complex", None)
         try:
             if isinstance(path, str):
                 if (
@@ -1192,9 +1272,17 @@ class File(Group):
                 )
                 raise TypeError(msg)
             self.decode_vlen_strings = True
+            # default _auto_complex to True for legacyapi
+            # this creates files which are readable by netCDF4 with nc-complex
+            # as well as h5netcdf
+            if self._auto_complex is None:
+                self._auto_complex = True
         else:
             if self.decode_vlen_strings is None:
                 self.decode_vlen_strings = False
+            # default _auto_complex to False for new API
+            if self._auto_complex is None:
+                self._auto_complex = False
 
         self._max_dim_id = -1
         # This maps keeps track of all HDF5 datasets corresponding to this group.
@@ -1231,12 +1319,8 @@ class File(Group):
 
         if dtype == bool:
             description = "boolean"
-        elif dtype == complex:
-            description = "complex"
         elif self._h5py.check_dtype(ref=dtype) is not None:
             description = "reference"
-        elif self._h5py.check_dtype(vlen=dtype) not in {None, str, bytes}:
-            description = "non-string variable length"
         else:
             description = None
 

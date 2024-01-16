@@ -15,7 +15,7 @@ from pytest import raises
 
 import h5netcdf
 from h5netcdf import legacyapi
-from h5netcdf.core import NOT_A_VARIABLE, CompatibilityError, EnumType
+from h5netcdf.core import NOT_A_VARIABLE, CompatibilityError, EnumType, VLType, CompoundType
 
 try:
     import h5pyd
@@ -913,10 +913,10 @@ def test_invalid_netcdf_error(tmp_local_or_remote_netcdf):
             "lzf_compressed", data=[1], dimensions=("x"), compression="lzf"
         )
         # invalid
-        with pytest.raises(h5netcdf.CompatibilityError):
-            f.create_variable("complex", data=1j)
-        with pytest.raises(h5netcdf.CompatibilityError):
-            f.attrs["complex_attr"] = 1j
+        #with pytest.raises(h5netcdf.CompatibilityError):
+        #    f.create_variable("complex", data=1j)
+        #with pytest.raises(h5netcdf.CompatibilityError):
+        #    f.attrs["complex_attr"] = 1j
         with pytest.raises(h5netcdf.CompatibilityError):
             f.create_variable("scaleoffset", data=[1], dimensions=("x",), scaleoffset=0)
 
@@ -2402,6 +2402,113 @@ def test_enum_type_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
             assert enum_type.enum_dict == enum_dict
             assert enum_type.name == "enum_t"
             assert isinstance(enum_type, netCDF4.EnumType)
+
+
+@pytest.mark.parametrize("dtype", ["int8", "uint16", "float32", "int64"])
+def test_vltype_creation(tmp_local_or_remote_netcdf, netcdf_write_module, dtype):
+    # skip for netCDF4 writer for remote hsds files
+    if netcdf_write_module == netCDF4 and tmp_local_or_remote_netcdf.startswith(
+            remote_h5
+    ):
+        pytest.skip()
+
+    with netcdf_write_module.Dataset(tmp_local_or_remote_netcdf, "w") as ds:
+        ds.createVLType(dtype, "vlen_t")
+
+    with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
+        vlen_type = ds.vltypes["vlen_t"]
+        assert isinstance(vlen_type, VLType)
+        assert h5py.check_vlen_dtype(vlen_type.dtype) == np.dtype(dtype)
+        assert vlen_type.name == "vlen_t"
+
+    with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
+        vlen_type = ds.vltypes["vlen_t"]
+        assert isinstance(vlen_type, legacyapi.VLType)
+        assert h5py.check_vlen_dtype(vlen_type.dtype) == np.dtype(dtype)
+        assert vlen_type.name == "vlen_t"
+
+    if not tmp_local_or_remote_netcdf.startswith(remote_h5):
+        with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
+            vlen_type = ds.vltypes["vlen_t"]
+            assert isinstance(vlen_type, netCDF4.VLType)
+            assert vlen_type.dtype == np.dtype(dtype)
+            assert vlen_type.name == "vlen_t"
+
+
+def test_compoundtype_creation(tmp_local_netcdf, netcdf_write_module):
+    compound = np.dtype([("time", np.int32), ("temperature", np.float32), ("pressure", np.float32)])
+    cmp_array = np.array([(0, 0., 0.), (1, 2., 3.), (2, 4., 6.), (3, 5., 7.), (4, 6., 8.)], dtype=compound)
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("x", 5)
+        compound_t = ds.createCompoundType(compound, "cmp_t")
+        var = ds.createVariable("data", compound_t, ("x",))
+        var[:] = cmp_array
+
+    with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
+        cmptype = ds.cmptypes["cmp_t"]
+        assert isinstance(cmptype, h5netcdf.legacyapi.CompoundType)
+        assert cmptype.name == "cmp_t"
+        assert array_equal(ds["data"][:], cmp_array)
+
+    with netCDF4.Dataset(tmp_local_netcdf, "r") as ds:
+        cmptype = ds.cmptypes["cmp_t"]
+        assert isinstance(cmptype, netCDF4.CompoundType)
+        assert cmptype.name == "cmp_t"
+        assert array_equal(ds["data"][:], cmp_array)
+
+
+@pytest.mark.skipif(version.parse(netCDF4.__version__) < version.parse("1.7.0"), reason="does not work before netCDF4 v1.7.0")
+@pytest.mark.parametrize("auto_complex", [True, False])
+def test_auto_complex_complex_create(tmp_local_netcdf, auto_complex):
+    kwargs = dict(auto_complex=auto_complex)
+    complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
+
+    # with auto_complex == True the complex compound type is committed
+    # to the file, otherwise only the transient type at the dataset
+    # array is written in any case with new API
+    with h5netcdf.File(tmp_local_netcdf, "w", **kwargs) as ds:
+        ds.dimensions["x"] = len(complex_array)
+        ds.create_variable("complex", dimensions=("x",), data=complex_array)
+
+    with h5netcdf.File(tmp_local_netcdf, "r", **kwargs) as ds:
+        assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
+        assert array_equal(ds["complex"], complex_array)
+
+    # legacyapi can read transient types
+    with legacyapi.Dataset(tmp_local_netcdf, "r", auto_complex=auto_complex) as ds:
+        assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
+        assert array_equal(ds["complex"], complex_array)
+
+    # netCDF4 only reads variable, if auto_complex == True
+    with netCDF4.Dataset(tmp_local_netcdf, "r", auto_complex=auto_complex) as ds:
+        assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
+        if auto_complex:
+            assert array_equal(ds["complex"], complex_array)
+        else:
+            assert "complex" not in ds.variables
+
+
+@pytest.mark.skipif(version.parse(netCDF4.__version__) < version.parse("1.7.0"), reason="does not work before netCDF4 v1.7.0")
+def test_nc_complex_compatibility(tmp_local_netcdf, netcdf_write_module):
+    complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
+    kwargs = {}
+    if netcdf_write_module == netCDF4:
+        kwargs.update(auto_complex=True)
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
+        ds.createDimension("x", size=len(complex_array))
+        var = ds.createVariable("data", "c16", ("x",))
+        var[:] = complex_array
+
+    with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
+        dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
+        assert isinstance(dtype, h5netcdf.legacyapi.CompoundType)
+        assert dtype.name == "_PFNC_DOUBLE_COMPLEX_TYPE"
+        assert array_equal(ds["data"][:], complex_array)
+
+    with netCDF4.Dataset(tmp_local_netcdf, "r", auto_complex=True) as ds:
+        dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
+        assert isinstance(dtype, netCDF4._netCDF4.CompoundType)
+        assert array_equal(ds["data"][:], complex_array)
 
 
 def test_hsds(hsds_up):
