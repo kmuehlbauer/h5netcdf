@@ -917,11 +917,6 @@ def test_invalid_netcdf_error(tmp_local_or_remote_netcdf):
         f.create_variable(
             "lzf_compressed", data=[1], dimensions=("x"), compression="lzf"
         )
-        # invalid
-        # with pytest.raises(h5netcdf.CompatibilityError):
-        #    f.create_variable("complex", data=1j)
-        # with pytest.raises(h5netcdf.CompatibilityError):
-        #    f.attrs["complex_attr"] = 1j
         with pytest.raises(h5netcdf.CompatibilityError):
             f.create_variable("scaleoffset", data=[1], dimensions=("x",), scaleoffset=0)
 
@@ -2525,7 +2520,6 @@ def test_auto_complex_complex_create(tmp_local_or_remote_netcdf, auto_complex):
 def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_module):
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
     kwargs = {}
-
     if (
         netcdf_write_module.__name__ == "netCDF4"
         and tmp_local_or_remote_netcdf.startswith(remote_h5)
@@ -2550,6 +2544,35 @@ def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_modul
             dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
             assert isinstance(dtype, netCDF4._netCDF4.CompoundType)
             assert array_equal(ds["data"][:], complex_array)
+
+
+@pytest.mark.parametrize("dtype", ["c4", "c8", "c16", "c32"])
+def test_complex_type_creation_errors(tmp_local_netcdf, netcdf_write_module, dtype):
+    complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
+    kwargs = dict(auto_complex=True)
+
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
+        ds.createDimension("x", size=len(complex_array))
+        if dtype == "c4":
+            try:
+                var = ds.createVariable("data", dtype, ("x",))
+            except TypeError as e:
+                assert e.args[0] == "data type 'c4' not understood"
+
+        elif dtype == "c32":
+            try:
+                ds.createVariable("data", dtype, ("x",))
+            except TypeError as e:
+                if netcdf_write_module.__name__ == "netCDF4":
+                    assert "Illegal primitive data type" in e.args[0]
+                else:
+                    assert (
+                        e.args[0]
+                        == "Currently only 'complex64' and 'complex128' dtypes are allowed."
+                    )
+        else:
+            var = ds.createVariable("data", dtype, ("x",))
+            var[:] = complex_array
 
 
 def test_hsds(hsds_up):

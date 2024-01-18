@@ -758,6 +758,10 @@ class Group(Mapping):
                     width = "FLOAT"
                 elif itemsize == 16:
                     width = "DOUBLE"
+                else:
+                    raise TypeError(
+                        "Currently only 'complex64' and 'complex128' dtypes are allowed."
+                    )
                 dname = f"_PFNC_{width}_COMPLEX_TYPE"
                 dtype = self._all_cmptypes.get(
                     dname, self.create_cmptype(np.dtype(dtype), dname)
