@@ -2546,6 +2546,10 @@ def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_modul
             assert array_equal(ds["data"][:], complex_array)
 
 
+@pytest.mark.skipif(
+    version.parse(netCDF4.__version__) < version.parse("1.7.0"),
+    reason="does not work before netCDF4 v1.7.0",
+)
 @pytest.mark.parametrize("dtype", ["c4", "c8", "c16", "c32"])
 def test_complex_type_creation_errors(tmp_local_netcdf, netcdf_write_module, dtype):
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
