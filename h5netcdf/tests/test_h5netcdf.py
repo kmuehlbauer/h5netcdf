@@ -15,7 +15,12 @@ from pytest import raises
 
 import h5netcdf
 from h5netcdf import legacyapi
-from h5netcdf.core import NOT_A_VARIABLE, CompatibilityError, EnumType, VLType, CompoundType
+from h5netcdf.core import (
+    NOT_A_VARIABLE,
+    CompatibilityError,
+    EnumType,
+    VLType,
+)
 
 try:
     import h5pyd
@@ -913,9 +918,9 @@ def test_invalid_netcdf_error(tmp_local_or_remote_netcdf):
             "lzf_compressed", data=[1], dimensions=("x"), compression="lzf"
         )
         # invalid
-        #with pytest.raises(h5netcdf.CompatibilityError):
+        # with pytest.raises(h5netcdf.CompatibilityError):
         #    f.create_variable("complex", data=1j)
-        #with pytest.raises(h5netcdf.CompatibilityError):
+        # with pytest.raises(h5netcdf.CompatibilityError):
         #    f.attrs["complex_attr"] = 1j
         with pytest.raises(h5netcdf.CompatibilityError):
             f.create_variable("scaleoffset", data=[1], dimensions=("x",), scaleoffset=0)
@@ -2408,7 +2413,7 @@ def test_enum_type_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
 def test_vltype_creation(tmp_local_or_remote_netcdf, netcdf_write_module, dtype):
     # skip for netCDF4 writer for remote hsds files
     if netcdf_write_module == netCDF4 and tmp_local_or_remote_netcdf.startswith(
-            remote_h5
+        remote_h5
     ):
         pytest.skip()
 
@@ -2436,8 +2441,13 @@ def test_vltype_creation(tmp_local_or_remote_netcdf, netcdf_write_module, dtype)
 
 
 def test_compoundtype_creation(tmp_local_netcdf, netcdf_write_module):
-    compound = np.dtype([("time", np.int32), ("temperature", np.float32), ("pressure", np.float32)])
-    cmp_array = np.array([(0, 0., 0.), (1, 2., 3.), (2, 4., 6.), (3, 5., 7.), (4, 6., 8.)], dtype=compound)
+    compound = np.dtype(
+        [("time", np.int32), ("temperature", np.float32), ("pressure", np.float32)]
+    )
+    cmp_array = np.array(
+        [(0, 0.0, 0.0), (1, 2.0, 3.0), (2, 4.0, 6.0), (3, 5.0, 7.0), (4, 6.0, 8.0)],
+        dtype=compound,
+    )
     with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
         ds.createDimension("x", 5)
         compound_t = ds.createCompoundType(compound, "cmp_t")
@@ -2457,7 +2467,10 @@ def test_compoundtype_creation(tmp_local_netcdf, netcdf_write_module):
         assert array_equal(ds["data"][:], cmp_array)
 
 
-@pytest.mark.skipif(version.parse(netCDF4.__version__) < version.parse("1.7.0"), reason="does not work before netCDF4 v1.7.0")
+@pytest.mark.skipif(
+    version.parse(netCDF4.__version__) < version.parse("1.7.0"),
+    reason="does not work before netCDF4 v1.7.0",
+)
 @pytest.mark.parametrize("auto_complex", [True, False])
 def test_auto_complex_complex_create(tmp_local_netcdf, auto_complex):
     kwargs = dict(auto_complex=auto_complex)
@@ -2488,7 +2501,10 @@ def test_auto_complex_complex_create(tmp_local_netcdf, auto_complex):
             assert "complex" not in ds.variables
 
 
-@pytest.mark.skipif(version.parse(netCDF4.__version__) < version.parse("1.7.0"), reason="does not work before netCDF4 v1.7.0")
+@pytest.mark.skipif(
+    version.parse(netCDF4.__version__) < version.parse("1.7.0"),
+    reason="does not work before netCDF4 v1.7.0",
+)
 def test_nc_complex_compatibility(tmp_local_netcdf, netcdf_write_module):
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
     kwargs = {}

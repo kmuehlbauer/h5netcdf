@@ -767,7 +767,7 @@ class Group(Mapping):
             _invalid_netcdf_feature(
                 "scale-offset filters",
                 self._root.invalid_netcdf,
-        )
+            )
 
         # maybe create new dimensions depending on data
         if data is not None:
