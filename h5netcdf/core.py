@@ -1122,6 +1122,8 @@ class Group(Mapping):
         datatype_name: string
             A Python string containing a description of the VL data type.
         """
+        # wrap in numpy dtype first
+        datatype = np.dtype(datatype)
         et = self._root._h5py.vlen_dtype(datatype)
         self._h5group[datatype_name] = et
         # create vltype class instance
@@ -1130,17 +1132,16 @@ class Group(Mapping):
         return vltype
 
     def create_cmptype(self, datatype, datatype_name):
-        """Create VLType.
+        """Create CompoundType.
 
         datatype: np.dtype
             A numpy dtype object describing the structured type.
         datatype_name: string
             A Python string containing a description of the compound data type.
         """
-        # we need to use low level create/commit methods
-        et = self._root._h5py.h5t.py_create(datatype)
-        # h5py will otherwise convert to 'O'-type
-        et.commit(self._h5group.id, datatype_name.encode())
+        # wrap in numpy dtype first
+        datatype = np.dtype(datatype)
+        self._h5group[datatype_name] = datatype
         # create compound class instance
         cmptype = self._cmptype_cls(self, datatype_name)
         self._cmptypes[datatype_name] = cmptype
