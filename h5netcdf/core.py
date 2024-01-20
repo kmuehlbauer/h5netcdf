@@ -750,15 +750,13 @@ class Group(Mapping):
 
         # compound type handling
         if np.dtype(dtype).kind == "c":
-            if not isinstance(dtype, CompoundType) and self._root._auto_complex:
+            if not isinstance(dtype, CompoundType):
                 # todo check compound types for
                 #  existing complex types which may be used
                 itemsize = np.dtype(dtype).itemsize
-                if itemsize == 8:
-                    width = "FLOAT"
-                elif itemsize == 16:
-                    width = "DOUBLE"
-                else:
+                try:
+                    width = {8: "FLOAT", 16: "DOUBLE"}[itemsize]
+                except KeyError:
                     raise TypeError(
                         "Currently only 'complex64' and 'complex128' dtypes are allowed."
                     )
@@ -1211,7 +1209,6 @@ class File(Group):
         track_order = kwargs.pop("track_order", track_order_default)
 
         self.decode_vlen_strings = kwargs.pop("decode_vlen_strings", None)
-        self._auto_complex = kwargs.pop("auto_complex", None)
         try:
             if isinstance(path, str):
                 if (
@@ -1277,17 +1274,9 @@ class File(Group):
                 )
                 raise TypeError(msg)
             self.decode_vlen_strings = True
-            # default _auto_complex to True for legacyapi
-            # this creates files which are readable by netCDF4 with nc-complex
-            # as well as h5netcdf
-            if self._auto_complex is None:
-                self._auto_complex = True
         else:
             if self.decode_vlen_strings is None:
                 self.decode_vlen_strings = False
-            # default _auto_complex to False for new API
-            if self._auto_complex is None:
-                self._auto_complex = False
 
         self._max_dim_id = -1
         # This maps keeps track of all HDF5 datasets corresponding to this group.

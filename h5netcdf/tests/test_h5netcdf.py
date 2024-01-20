@@ -2472,51 +2472,6 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
     version.parse(netCDF4.__version__) < version.parse("1.7.0"),
     reason="does not work before netCDF4 v1.7.0",
 )
-@pytest.mark.parametrize("auto_complex", [True, False])
-def test_auto_complex_complex_create(tmp_local_or_remote_netcdf, auto_complex):
-    kwargs = dict(auto_complex=auto_complex)
-    complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
-
-    if (
-        netcdf_write_module.__name__ == "netCDF4"
-        and tmp_local_or_remote_netcdf.startswith(remote_h5)
-    ):
-        pytest.skip("does not work for netCDF4")
-
-    # with auto_complex == True the complex compound type is committed
-    # to the file, otherwise only the transient type at the dataset
-    # array is written in any case with new API
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "w", **kwargs) as ds:
-        ds.dimensions["x"] = len(complex_array)
-        ds.create_variable("complex", dimensions=("x",), data=complex_array)
-
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "r", **kwargs) as ds:
-        assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
-        assert array_equal(ds["complex"], complex_array)
-
-    # legacyapi can read transient types
-    with legacyapi.Dataset(
-        tmp_local_or_remote_netcdf, "r", auto_complex=auto_complex
-    ) as ds:
-        assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
-        assert array_equal(ds["complex"], complex_array)
-
-    if not tmp_local_or_remote_netcdf.startswith(remote_h5):
-        # netCDF4 only reads variable, if auto_complex == True
-        with netCDF4.Dataset(
-            tmp_local_or_remote_netcdf, "r", auto_complex=auto_complex
-        ) as ds:
-            assert ("_PFNC_DOUBLE_COMPLEX_TYPE" in ds.cmptypes) == auto_complex
-            if auto_complex:
-                assert array_equal(ds["complex"], complex_array)
-            else:
-                assert "complex" not in ds.variables
-
-
-@pytest.mark.skipif(
-    version.parse(netCDF4.__version__) < version.parse("1.7.0"),
-    reason="does not work before netCDF4 v1.7.0",
-)
 def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_module):
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
     kwargs = {}
@@ -2550,33 +2505,20 @@ def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_modul
     version.parse(netCDF4.__version__) < version.parse("1.7.0"),
     reason="does not work before netCDF4 v1.7.0",
 )
-@pytest.mark.parametrize("dtype", ["c4", "c8", "c16", "c32"])
-def test_complex_type_creation_errors(tmp_local_netcdf, netcdf_write_module, dtype):
+def test_complex_type_creation_errors(tmp_local_netcdf):
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
-    kwargs = dict(auto_complex=True)
+    kwargs = {}
 
-    with netcdf_write_module.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
+    with legacyapi.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
         ds.createDimension("x", size=len(complex_array))
-        if dtype == "c4":
-            try:
-                var = ds.createVariable("data", dtype, ("x",))
-            except TypeError as e:
-                assert e.args[0] == "data type 'c4' not understood"
+        with pytest.raises(TypeError, match="data type 'c4' not understood"):
+            var = ds.createVariable("data", "c4", ("x",))
 
-        elif dtype == "c32":
-            try:
-                ds.createVariable("data", dtype, ("x",))
-            except TypeError as e:
-                if netcdf_write_module.__name__ == "netCDF4":
-                    assert "Illegal primitive data type" in e.args[0]
-                else:
-                    assert (
-                        e.args[0]
-                        == "Currently only 'complex64' and 'complex128' dtypes are allowed."
-                    )
-        else:
-            var = ds.createVariable("data", dtype, ("x",))
-            var[:] = complex_array
+    with legacyapi.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
+        ds.createDimension("x", size=len(complex_array))
+        with pytest.raises(TypeError, match="Currently only 'complex64' and 'complex128' dtypes are allowed."):
+            var = ds.createVariable("data", "c32", ("x",))
+
 
 
 def test_hsds(hsds_up):

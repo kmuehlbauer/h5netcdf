@@ -7,6 +7,8 @@ Development Version:
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_
 - Update h5pyd testing.
   By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_
+- Add VLType and CompoundType, commit complex compound type to file. Align with nc-complex.
+  By `Kai Mühlbauer <https://github.com/kmuehlbauer>`_
 
 Version 1.3.0 (November 7th, 2023):
 
