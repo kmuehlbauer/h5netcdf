@@ -756,10 +756,10 @@ class Group(Mapping):
                 itemsize = np.dtype(dtype).itemsize
                 try:
                     width = {8: "FLOAT", 16: "DOUBLE"}[itemsize]
-                except KeyError:
+                except KeyError as e:
                     raise TypeError(
                         "Currently only 'complex64' and 'complex128' dtypes are allowed."
-                    )
+                    ) from e
                 dname = f"_PFNC_{width}_COMPLEX_TYPE"
                 dtype = self._all_cmptypes.get(
                     dname, self.create_cmptype(np.dtype(dtype), dname)
