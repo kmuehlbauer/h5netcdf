@@ -2473,7 +2473,21 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
     reason="does not work before netCDF4 v1.7.0",
 )
 def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_module):
+    # native complex
     complex_array = np.array([0 + 0j, 1 + 0j, 0 + 1j, 1 + 1j, 0.25 + 0.75j])
+    # compound complex
+    complex128 = np.dtype(
+        {
+            "names": ["r", "i"],
+            "formats": ["f8", "f8"],
+            "offsets": [0, 8],
+            "itemsize": 16,
+            "aligned": True,
+        }
+    )
+    cdata = np.array(
+        [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (0.25, 0.75)], dtype=complex128
+    )
     kwargs = {}
     if (
         netcdf_write_module.__name__ == "netCDF4"
@@ -2499,6 +2513,11 @@ def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_modul
             dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
             assert isinstance(dtype, netCDF4._netCDF4.CompoundType)
             assert array_equal(ds["data"][:], complex_array)
+
+        with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r", auto_complex=False) as ds:
+            dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
+            assert isinstance(dtype, netCDF4._netCDF4.CompoundType)
+            assert array_equal(ds["data"][:], cdata)
 
 
 @pytest.mark.skipif(
