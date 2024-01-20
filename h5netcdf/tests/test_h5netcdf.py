@@ -2516,9 +2516,11 @@ def test_complex_type_creation_errors(tmp_local_netcdf):
 
     with legacyapi.Dataset(tmp_local_netcdf, "w", **kwargs) as ds:
         ds.createDimension("x", size=len(complex_array))
-        with pytest.raises(TypeError, match="Currently only 'complex64' and 'complex128' dtypes are allowed."):
+        with pytest.raises(
+            TypeError,
+            match="Currently only 'complex64' and 'complex128' dtypes are allowed.",
+        ):
             var = ds.createVariable("data", "c32", ("x",))
-
 
 
 def test_hsds(hsds_up):
