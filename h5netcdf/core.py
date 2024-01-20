@@ -259,7 +259,7 @@ class BaseVariable(BaseObject):
             [self._parent._all_dimensions[d]._dimid for d in dims],
             "int32",
         )
-        if len(coord_ids) >= 1:
+        if len(coord_ids) > 1:
             self._h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
 
     def _ensure_dim_id(self):
@@ -882,7 +882,7 @@ class Group(Mapping):
         # when a variable is first written to, after variable creation.
         # Here we just attach it to every variable on creation.
         # Todo: get this consistent with netcdf-c/netcdf4-python
-        # variable._ensure_dim_id()
+        variable._ensure_dim_id()
 
         if fillvalue is not None:
             # trying to create correct type of fillvalue
