@@ -764,6 +764,9 @@ class Group(Mapping):
                 dtype = self._all_cmptypes.get(
                     dname, self.create_cmptype(np.dtype(dtype), dname)
                 )
+            # use committed type
+            # that will actually reference the named type in the dataset
+            dtype = dtype._h5ds
 
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
