@@ -271,6 +271,28 @@ class BaseVariable(BaseObject):
             if "_Netcdf4Dimid" in dim.attrs:
                 self._h5ds.attrs["_Netcdf4Dimid"] = dim.attrs["_Netcdf4Dimid"]
 
+    def _add_fillvalue(self, fillvalue, dtype):
+        """Add _FillValue attribute"""
+        # trying to create correct type of fillvalue
+        if self.dtype is str:
+            value = fillvalue
+        else:
+            # todo: this always checks for dtype.metadata
+            string_info = self._root._h5py.check_string_dtype(self.dtype)
+            enum_info = self._root._h5py.check_enum_dtype(self.dtype)
+            if (
+                string_info
+                and string_info.length is not None
+                and string_info.length > 1
+            ) or enum_info:
+                value = fillvalue
+            else:
+                value = self.dtype.type(fillvalue)
+
+        # need to use create-function in order
+        # to provide correct committed/named type
+        self.attrs._h5attrs.create("_FillValue", value, dtype=dtype)
+
     def _maybe_resize_dimensions(self, key, value):
         """Resize according to given (expanded) key with respect to variable dimensions"""
         new_shape = ()
@@ -329,6 +351,27 @@ class BaseVariable(BaseObject):
     @property
     def datatype(self):
         """Return numpy dtype or user defined type."""
+        if self._root._h5py.__name__ == "h5py":
+            # retrieve name from dataset type
+            dname = self._h5ds._d(
+                self._root._h5py.h5i.get_name(self._h5ds.id.get_type())
+            )
+            # if not None we have a committed type and fetch the
+            # h5netcdf user type from the relevant group
+            if dname is not None and dname in self._root._h5file:
+                elems = dname.split("/")
+                group = self._root
+                if len(elems) > 2:
+                    group = group["/".join(elems[:-1])]
+                user_types = {
+                    **group._all_enumtypes,
+                    **group._all_vltypes,
+                    **group._all_cmptypes,
+                }
+                if elems[-1] in user_types:
+                    return user_types[elems[-1]]
+
+        # h5pyd and in case of transient types, we need special handling
         if (enum_dict := self._root._h5py.check_enum_dtype(self.dtype)) is not None:
             for tid in self._parent._all_enumtypes.values():
                 if self._root._h5py == h5py:
@@ -337,6 +380,8 @@ class BaseVariable(BaseObject):
                     found = tid.enum_dict == enum_dict
                 if found:
                     return tid
+
+        # fallback to just dtype
         return self.dtype
 
     def _get_padding(self, key):
@@ -537,6 +582,87 @@ def _unlabeled_dimension_mix(h5py_dataset):
     return status
 
 
+def _check_h5type(self, dtype, np_dtype):
+    """Check and handle user types"""
+    # is user type is given extract underlying h5py object
+    # we just use the h5py user type here
+    if isinstance(dtype, (CompoundType, EnumType, VLType)):
+        h5type = dtype._h5ds
+        if dtype._root._h5file.filename != self._root._h5file.filename:
+            raise TypeError(
+                f"Given dtype {dtype} is not committed into current file"
+                f" {self._root._h5file.filename}. Instead it's committed into"
+                f" file {dtype._root._h5file.filename}"
+            )
+        # check if committed type can be accessed in current group hierarchy
+        if (
+            (
+                dname := {
+                    **self._all_enumtypes,
+                    **self._all_vltypes,
+                    **self._all_cmptypes,
+                }.get(dtype.name)
+            )
+            is None
+        ) or dname._h5ds.name != h5type.name:
+            # issue warning only before decision is made to raise here
+            msg = (
+                f"Given dtype {dtype.name!r} is not accessible in current group"
+                f" {self._h5group.name!r} or above. Instead it's defined at"
+                f" {h5type.name!r}. Please create it in the current group or above."
+            )
+            warnings.warn(msg)
+        return h5type
+
+    elif np_dtype.kind == "c":
+        itemsize = np_dtype.itemsize
+        try:
+            width = {8: "FLOAT", 16: "DOUBLE"}[itemsize]
+        except KeyError as e:
+            raise TypeError(
+                "Currently only 'complex64' and 'complex128' dtypes are allowed."
+            ) from e
+        dname = f"_PFNC_{width}_COMPLEX_TYPE"
+        # todo check compound type for existing complex types
+        #  which may be used her
+        # if dname is not available in current group-path
+        # create and commit type in current group
+        if dname not in self._all_cmptypes:
+            self.create_cmptype(np_dtype, dname)
+        # get committed type from file
+        return self._all_cmptypes[dname]._h5ds
+    else:
+        return dtype
+
+
+def _check_fillvalue(self, fillvalue, dtype, np_dtype):
+    """Handles fillvalues before dataset creation"""
+
+    # handling default fillvalues for legacyapi
+    # see https://github.com/h5netcdf/h5netcdf/issues/182
+    from .legacyapi import Dataset, _get_default_fillvalue
+
+    h5fillvalue = fillvalue
+
+    # if no fillvalue is provided take netcdf4 default values for legacyapi
+    if fillvalue is None:
+        if isinstance(self._parent._root, Dataset):
+            h5fillvalue = _get_default_fillvalue(np_dtype)
+
+    # handling for EnumType's
+    if dtype is not None and isinstance(dtype, EnumType):
+        if h5fillvalue not in dtype.enum_dict.values() and h5fillvalue != 0:
+            filltype = "default" if fillvalue is None else "specified"
+            warnings.warn(
+                f"Creating variable with {filltype} fill_value {h5fillvalue!r}"
+                f" which is not defined in enum type {dtype!r}."
+                f" This will create non-conforming netcdf4 files."
+            )
+        fillvalue = np.array(h5fillvalue).astype(np_dtype)
+        h5fillvalue = fillvalue
+    return fillvalue, h5fillvalue
+
+
 class Group(Mapping):
     _variable_cls = Variable
     _dimension_cls = Dimension
@@ -590,10 +716,13 @@ class Group(Mapping):
                 self._groups.add(k)
             # user defined types
             elif isinstance(v, self._root._h5py.Datatype):
+                # enum
                 if self._root._h5py.check_enum_dtype(v.dtype):
                     self._enumtypes.add(k)
+                # vlen
                 elif self._root._h5py.check_vlen_dtype(v.dtype):
                     self._vltypes.add(k)
+                # compound
                 elif v.dtype.names is not None or "complex" in v.dtype.name:
                     self._cmptypes.add(k)
             else:
@@ -748,25 +877,18 @@ class Group(Mapping):
         else:
             self._root._check_valid_netcdf_dtype(dtype)
 
-        # compound type handling
-        if np.dtype(dtype).kind == "c":
-            if not isinstance(dtype, CompoundType):
-                # todo check compound types for
-                #  existing complex types which may be used
-                itemsize = np.dtype(dtype).itemsize
-                try:
-                    width = {8: "FLOAT", 16: "DOUBLE"}[itemsize]
-                except KeyError as e:
-                    raise TypeError(
-                        "Currently only 'complex64' and 'complex128' dtypes are allowed."
-                    ) from e
-                dname = f"_PFNC_{width}_COMPLEX_TYPE"
-                dtype = self._all_cmptypes.get(
-                    dname, self.create_cmptype(np.dtype(dtype), dname)
-                )
-            # use committed type
-            # that will actually reference the named type in the dataset
-            dtype = dtype._h5ds
+        # raise if just a named h5py.Datatype is given
+        if isinstance(dtype, self._root._h5py.Datatype):
+            raise TypeError(
+                f"Argument dtype {dtype!r} is not allowed. "
+                f"Please provide h5netcdf user type or numpy compatible type."
+            )
+
+        # keep numpy dtype for transformations below
+        np_dtype = np.dtype(dtype)
+
+        # check and handle user types
+        h5type = _check_h5type(self, dtype, np_dtype)
 
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
@@ -812,7 +934,7 @@ class Group(Mapping):
         has_unsized_dims = 0 in shape
         if has_unsized_dims and chunks in {None, True}:
             if chunking_heuristic in [None, "h5netcdf"]:
-                chunks = _get_default_chunksizes(shape, dtype)
+                chunks = _get_default_chunksizes(shape, np_dtype)
             elif chunking_heuristic == "h5py":
                 # do nothing -> h5py will handle chunks internally
                 pass
@@ -834,31 +956,21 @@ class Group(Mapping):
         if self._root._h5py.__name__ == "h5py":
             kwargs.update(dict(track_order=self._parent._track_order))
 
-        # handling default fillvalues for legacyapi
-        # see https://github.com/h5netcdf/h5netcdf/issues/182
-        from .legacyapi import Dataset, _get_default_fillvalue
+        # fill value handling
+        fillvalue, h5fillvalue = _check_fillvalue(self, fillvalue, dtype, np_dtype)
 
-        # enum handling
-        if fillvalue is not None and dtype is not None:
-            if isinstance(dtype, EnumType):
-                # raise if enum type is not in current group hierarchy
-                if dtype.name not in self._parent._all_enumtypes:
-                    raise TypeError(
-                        f"Unable to create variable {name!r} with EnumType {dtype!r}. EnumType not found in group {self.name!r} or it's parents."
-                    )
-                dtype = dtype.dtype
-                fillvalue = np.array(fillvalue).astype(dtype)
-        fillval = fillvalue
-        if fillvalue is None and isinstance(self._parent._root, Dataset):
-            fillval = _get_default_fillvalue(dtype)
+        # use numpy dtype for h5pyd
+        if self._root._h5py.__name__ == "h5pyd":
+            h5type = np_dtype
+
         # create hdf5 variable
         self._h5group.create_dataset(
             h5name,
             shape,
-            dtype=dtype,
+            dtype=h5type,
             data=data,
             chunks=chunks,
-            fillvalue=fillval,
+            fillvalue=h5fillvalue,
             **kwargs,
         )
 
@@ -887,24 +999,9 @@ class Group(Mapping):
         # Todo: get this consistent with netcdf-c/netcdf4-python
         variable._ensure_dim_id()
 
+        # add fillvalue attribute
         if fillvalue is not None:
-            # trying to create correct type of fillvalue
-            if variable.dtype is str:
-                value = fillvalue
-            else:
-                # todo: this always checks for dtype.metadata
-                string_info = self._root._h5py.check_string_dtype(variable.dtype)
-                enum_info = self._root._h5py.check_enum_dtype(variable.dtype)
-                if (
-                    string_info
-                    and string_info.length is not None
-                    and string_info.length > 1
-                ) or enum_info:
-                    value = fillvalue
-                else:
-                    value = variable.dtype.type(fillvalue)
-
-            variable.attrs._h5attrs["_FillValue"] = value
+            variable._add_fillvalue(fillvalue, h5type)
 
         return variable
 
