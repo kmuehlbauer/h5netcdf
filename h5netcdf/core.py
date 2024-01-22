@@ -329,6 +329,30 @@ class BaseVariable(BaseObject):
     @property
     def datatype(self):
         """Return numpy dtype or user defined type."""
+        if self._root._h5py.__name__ == "h5py":
+            dname = self._h5ds._d(
+                self._root._h5py.h5i.get_name(self._h5ds.id.get_type())
+            )
+            if dname is not None and dname in self._root._h5file:
+                print(dname)
+                elems = dname.split("/")
+                path = "/".join(elems[:-1])
+                name = elems[-1]
+                print(elems, path, name)
+                if len(path) > 1:
+                    group = self._root[path]
+                else:
+                    group = self._root
+                print("grp:", group)
+
+                if name in group.enumtypes:
+                    return group.enumtypes[name]
+                elif name in group.vlentypes:
+                    return group.vlentypes[name]
+                elif name in group.cmptypes:
+                    return group.cmptypes[name]
+
+        # h5pyd and in case of transient types, we need special handling
         if (enum_dict := self._root._h5py.check_enum_dtype(self.dtype)) is not None:
             for tid in self._parent._all_enumtypes.values():
                 if self._root._h5py == h5py:
@@ -748,12 +772,35 @@ class Group(Mapping):
         else:
             self._root._check_valid_netcdf_dtype(dtype)
 
-        # compound type handling
-        if np.dtype(dtype).kind == "c":
-            if not isinstance(dtype, CompoundType):
-                # todo check compound types for
-                #  existing complex types which may be used
-                itemsize = np.dtype(dtype).itemsize
+        # raise if just a named h5py.Datatype is given
+        if isinstance(dtype, self._root._h5py.Datatype):
+            raise TypeError(
+                f"Argument dtype {dtype!r} is not allowed. "
+                f"Please provide h5netcdf user type or numpy compatible type."
+            )
+
+        # keep numpy dtype for transformations below
+        np_dtype = np.dtype(dtype)
+
+        # copy dtype to h5type
+        h5type = dtype
+        # is user type is given extract underlying h5py object
+        # we just use the h5py user type here
+        if isinstance(dtype, (CompoundType, EnumType, VLType)):
+            h5type = dtype._h5ds
+
+        # check if committed dtype is linked into current file
+        # this might break, if committed types from other files are used
+        if isinstance(h5type, self._root._h5py.Datatype):
+            if h5type.name not in self._root._h5file:
+                TypeError(
+                    f"Given dtype {dtype} is not committed into current file"
+                    f"{self._root._h5file.filename}."
+                )
+        else:
+            # complex compound type handling
+            if np_dtype.kind == "c":
+                itemsize = np_dtype.itemsize
                 try:
                     width = {8: "FLOAT", 16: "DOUBLE"}[itemsize]
                 except KeyError as e:
@@ -761,12 +808,14 @@ class Group(Mapping):
                         "Currently only 'complex64' and 'complex128' dtypes are allowed."
                     ) from e
                 dname = f"_PFNC_{width}_COMPLEX_TYPE"
-                dtype = self._all_cmptypes.get(
-                    dname, self.create_cmptype(np.dtype(dtype), dname)
-                )
-            # use committed type
-            # that will actually reference the named type in the dataset
-            dtype = dtype._h5ds
+                # todo check compound type for existing complex types
+                #  which may be used her
+                # if dname is not available in current group-path
+                # create and commit type in current group
+                if dname not in self._all_cmptypes:
+                    self.create_cmptype(np_dtype, dname)
+                # get committed type from file
+                h5type = self._all_cmptypes[dname]._h5ds
 
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
@@ -812,7 +861,7 @@ class Group(Mapping):
         has_unsized_dims = 0 in shape
         if has_unsized_dims and chunks in {None, True}:
             if chunking_heuristic in [None, "h5netcdf"]:
-                chunks = _get_default_chunksizes(shape, dtype)
+                chunks = _get_default_chunksizes(shape, np_dtype)
             elif chunking_heuristic == "h5py":
                 # do nothing -> h5py will handle chunks internally
                 pass
@@ -841,21 +890,21 @@ class Group(Mapping):
         # enum handling
         if fillvalue is not None and dtype is not None:
             if isinstance(dtype, EnumType):
-                # raise if enum type is not in current group hierarchy
-                if dtype.name not in self._parent._all_enumtypes:
-                    raise TypeError(
-                        f"Unable to create variable {name!r} with EnumType {dtype!r}. EnumType not found in group {self.name!r} or it's parents."
-                    )
                 dtype = dtype.dtype
                 fillvalue = np.array(fillvalue).astype(dtype)
         fillval = fillvalue
         if fillvalue is None and isinstance(self._parent._root, Dataset):
-            fillval = _get_default_fillvalue(dtype)
+            fillval = _get_default_fillvalue(np_dtype)
+
+        # use numpy dtype for h5pyd
+        if self._root._h5py.__name__ == "h5pyd":
+            h5type = np_dtype
+
         # create hdf5 variable
         self._h5group.create_dataset(
             h5name,
             shape,
-            dtype=dtype,
+            dtype=h5type,
             data=data,
             chunks=chunks,
             fillvalue=fillval,
@@ -904,7 +953,9 @@ class Group(Mapping):
                 else:
                     value = variable.dtype.type(fillvalue)
 
-            variable.attrs._h5attrs["_FillValue"] = value
+            # need to use create-function in order
+            # to provide correct committed/named type
+            variable.attrs._h5attrs.create("_FillValue", value, dtype=h5type)
 
         return variable
 

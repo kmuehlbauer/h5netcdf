@@ -2235,14 +2235,16 @@ def test_enum_type(tmp_local_or_remote_netcdf):
         assert "assign illegal value(s)" in e.value.args[0]
 
         g = ds.create_group("test")
-        enum_type2 = g.create_enumtype(np.uint8, "enum_t2", enum_dict2)
-        with pytest.raises(TypeError, match="EnumType not found in group"):
-            ds.create_variable(
-                "enum_var2",
-                ("enum_dim",),
-                dtype=enum_type2,
-                fillvalue=enum_dict2["missing"],
-            )
+        g1 = ds.create_group("test1")
+        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        # with pytest.raises(TypeError, match="EnumType not found in group"):
+        ds.create_variable(
+            "enum_var2",
+            ("enum_dim",),
+            dtype=enum_type2,
+            fillvalue=enum_dict2["missing"],
+        )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2288,14 +2290,17 @@ def test_enum_type(tmp_local_or_remote_netcdf):
         assert "assign illegal value(s)" in e.value.args[0]
 
         g = ds.create_group("test")
-        enum_type2 = g.create_enumtype(np.uint8, "enum_t2", enum_dict2)
-        with pytest.raises(TypeError, match="EnumType not found in group"):
-            ds.create_variable(
-                "enum_var2",
-                ("enum_dim",),
-                dtype=enum_type2,
-                fillvalue=enum_dict2["missing"],
-            )
+        g1 = ds.create_group("test1")
+        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
+
+        # with pytest.raises(TypeError, match="EnumType not found in group"):
+        ds.create_variable(
+            "enum_var2",
+            ("enum_dim",),
+            dtype=enum_type2,
+            fillvalue=enum_dict2["missing"],
+        )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2341,6 +2346,16 @@ def test_enum_type(tmp_local_or_remote_netcdf):
                 ValueError, match="assign illegal value to Enum variable"
             ):
                 v[3] = 5
+
+            g = ds.createGroup("test")
+            g1 = ds.createGroup("test1")
+            enum_type2 = g.createEnumType(np.uint8, "enum_t", enum_dict)
+            enum_type3 = g1.createEnumType(np.uint8, "enum_t", enum_dict2)
+
+            # with pytest.raises(TypeError, match="EnumType not found in group"):
+            g.createVariable(
+                "enum_var2", enum_type3, ("enum_dim",), fill_value=enum_dict2["missing"]
+            )
 
         # check, if new API can read them
         with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
