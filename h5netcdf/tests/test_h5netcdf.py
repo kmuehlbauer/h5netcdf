@@ -2238,13 +2238,14 @@ def test_enum_type(tmp_local_or_remote_netcdf):
         g1 = ds.create_group("test1")
         enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict2)
         enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
-        # with pytest.raises(TypeError, match="EnumType not found in group"):
-        ds.create_variable(
-            "enum_var2",
-            ("enum_dim",),
-            dtype=enum_type2,
-            fillvalue=enum_dict2["missing"],
-        )
+
+        with pytest.raises(TypeError, match="not accessible in current group"):
+            ds.create_variable(
+                "enum_var2",
+                ("enum_dim",),
+                dtype=enum_type2,
+                fillvalue=enum_dict2["missing"],
+            )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2289,18 +2290,19 @@ def test_enum_type(tmp_local_or_remote_netcdf):
             v[3] = 5
         assert "assign illegal value(s)" in e.value.args[0]
 
+        # create data/types in different subgroups
         g = ds.create_group("test")
         g1 = ds.create_group("test1")
-        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict)
         enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
 
-        # with pytest.raises(TypeError, match="EnumType not found in group"):
-        ds.create_variable(
-            "enum_var2",
-            ("enum_dim",),
-            dtype=enum_type2,
-            fillvalue=enum_dict2["missing"],
-        )
+        with pytest.raises(TypeError, match="not accessible in current group"):
+            g.create_variable(
+                "enum_var2",
+                ("enum_dim",),
+                dtype=enum_type3,
+                fillvalue=enum_dict2["missing"],
+            )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2352,7 +2354,6 @@ def test_enum_type(tmp_local_or_remote_netcdf):
             enum_type2 = g.createEnumType(np.uint8, "enum_t", enum_dict)
             enum_type3 = g1.createEnumType(np.uint8, "enum_t", enum_dict2)
 
-            # with pytest.raises(TypeError, match="EnumType not found in group"):
             g.createVariable(
                 "enum_var2", enum_type3, ("enum_dim",), fill_value=enum_dict2["missing"]
             )
@@ -2366,6 +2367,7 @@ def test_enum_type(tmp_local_or_remote_netcdf):
             assert enum_var.attrs["_FillValue"] == 255
             assert enum_var.datatype == enum_type
             assert enum_var.datatype.name == "enum_t"
+            assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
 
         # check if legacyapi can read them
         with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2376,6 +2378,7 @@ def test_enum_type(tmp_local_or_remote_netcdf):
             assert enum_var.attrs["_FillValue"] == 255
             assert enum_var.datatype == enum_type
             assert enum_var.datatype.name == "enum_t"
+            assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
 
         # check if netCDF4-python can read them
         with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2386,6 +2389,8 @@ def test_enum_type(tmp_local_or_remote_netcdf):
             assert enum_var._FillValue == 255
             assert repr(enum_var.datatype) == repr(enum_type)
             assert enum_var.datatype.name == "enum_t"
+            with pytest.raises(IndexError, match="enum_var2 not found in /test"):
+                assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
 
 
 def test_enum_type_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
@@ -2474,6 +2479,7 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
         assert isinstance(cmptype, h5netcdf.legacyapi.CompoundType)
         assert cmptype.name == "cmp_t"
         assert array_equal(ds["data"][:], cmp_array)
+        assert ds["data"].datatype == cmptype.dtype
 
     if not tmp_local_or_remote_netcdf.startswith(remote_h5):
         with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2481,6 +2487,7 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
             assert isinstance(cmptype, netCDF4.CompoundType)
             assert cmptype.name == "cmp_t"
             assert array_equal(ds["data"][:], cmp_array)
+            assert ds["data"].datatype == cmptype.dtype
 
 
 @pytest.mark.skipif(

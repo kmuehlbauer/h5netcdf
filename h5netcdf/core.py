@@ -330,27 +330,26 @@ class BaseVariable(BaseObject):
     def datatype(self):
         """Return numpy dtype or user defined type."""
         if self._root._h5py.__name__ == "h5py":
+            # retrieve name from dataset type
             dname = self._h5ds._d(
                 self._root._h5py.h5i.get_name(self._h5ds.id.get_type())
             )
+            # if not None we have a committed type and fetch the
+            # h5netcdf user type from the relevant group
             if dname is not None and dname in self._root._h5file:
-                print(dname)
                 elems = dname.split("/")
-                path = "/".join(elems[:-1])
-                name = elems[-1]
-                print(elems, path, name)
-                if len(path) > 1:
-                    group = self._root[path]
-                else:
-                    group = self._root
-                print("grp:", group)
+                group = self._root
+                if len(elems) > 2:
+                    group = group["/".join(elems[:-1])]
+                user_types = {**group._all_enumtypes, **group._all_vltypes, **group._all_cmptypes}
+                if elems[-1] in user_types:
+                    return user_types[elems[-1]]
+                # else:
+                #     msg = (
+                #         f"Given dtype {dtype.name!r} is not accessible in current group {self._h5group.name!r} or above."
+                #         f" Instead it is defined at {dtype._h5ds.name!r}. Please create the type in the current group or above.")
+                #     raise TypeError(msg)
 
-                if name in group.enumtypes:
-                    return group.enumtypes[name]
-                elif name in group.vlentypes:
-                    return group.vlentypes[name]
-                elif name in group.cmptypes:
-                    return group.cmptypes[name]
 
         # h5pyd and in case of transient types, we need special handling
         if (enum_dict := self._root._h5py.check_enum_dtype(self.dtype)) is not None:
@@ -361,6 +360,7 @@ class BaseVariable(BaseObject):
                     found = tid.enum_dict == enum_dict
                 if found:
                     return tid
+        # fallback to just dtype
         return self.dtype
 
     def _get_padding(self, key):
@@ -614,10 +614,13 @@ class Group(Mapping):
                 self._groups.add(k)
             # user defined types
             elif isinstance(v, self._root._h5py.Datatype):
+                # enum
                 if self._root._h5py.check_enum_dtype(v.dtype):
                     self._enumtypes.add(k)
+                # vlen
                 elif self._root._h5py.check_vlen_dtype(v.dtype):
                     self._vltypes.add(k)
+                # compound
                 elif v.dtype.names is not None or "complex" in v.dtype.name:
                     self._cmptypes.add(k)
             else:
@@ -792,11 +795,17 @@ class Group(Mapping):
         # check if committed dtype is linked into current file
         # this might break, if committed types from other files are used
         if isinstance(h5type, self._root._h5py.Datatype):
+            print("DT:", h5type.name, dtype.name)
             if h5type.name not in self._root._h5file:
-                TypeError(
+                raise TypeError(
                     f"Given dtype {dtype} is not committed into current file"
                     f"{self._root._h5file.filename}."
                 )
+            print("DT2:", {**self._all_enumtypes, **self._all_vltypes, **self._all_cmptypes})
+            if ((dname := {**self._all_enumtypes, **self._all_vltypes, **self._all_cmptypes}.get(dtype.name)) is None or dname._h5ds.name != h5type.name):
+                msg = (f"Given dtype {dtype.name!r} is not accessible in current group {self._h5group.name!r} or above."
+                       f" Instead it is defined at {dtype._h5ds.name!r}. Please create the type in the current group or above.")
+                raise TypeError(msg)
         else:
             # complex compound type handling
             if np_dtype.kind == "c":
