@@ -2217,30 +2217,60 @@ def test_ros3():
     f.close()
 
 
-def test_enum_type(tmp_local_or_remote_netcdf):
+def test_user_type_error(tmp_local_or_remote_netcdf):
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+
+    with h5netcdf.File("test.nc", "w") as ds0:
+        enum_type_ext = ds0.create_enumtype(np.uint8, "enum_t", enum_dict1)
+        with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as ds:
+            ds.dimensions = {"enum_dim": 4}
+            enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict1)
+            with pytest.raises(TypeError, match="Please provide h5netcdf user type"):
+                ds.create_variable(
+                    "enum_var",
+                    ("enum_dim",),
+                    dtype=enum_type._h5ds,
+                    fillvalue=enum_dict1["missing"],
+                )
+            with pytest.raises(TypeError, match="is not committed into current file"):
+                ds.create_variable(
+                    "enum_var",
+                    ("enum_dim",),
+                    dtype=enum_type_ext,
+                    fillvalue=enum_dict1["missing"],
+                )
+
+
+def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf):
     # test EnumType
-    enum_dict = dict(one=1, two=2, three=3, missing=255)
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
     enum_dict2 = dict(one=1, two=2, three=3, missing=254)
 
     # first with new API
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as ds:
         ds.dimensions = {"enum_dim": 4}
-        enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict)
+        enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict1)
         v = ds.create_variable(
-            "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict["missing"]
+            "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict1["missing"]
         )
         v[0:3] = [1, 2, 3]
-        with pytest.raises(ValueError) as e:
+        with pytest.raises(ValueError, match="assign illegal value"):
             v[3] = 5
-        assert "assign illegal value(s)" in e.value.args[0]
 
-        g = ds.create_group("test")
         g1 = ds.create_group("test1")
-        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict2)
-        enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        g2 = ds.create_group("test2")
+        enum_type1 = g1.create_enumtype(np.uint8, "enum_t1", enum_dict1)
+        enum_type2 = g2.create_enumtype(np.uint8, "enum_t2", enum_dict2)
 
-        with pytest.raises(TypeError, match="not accessible in current group"):
-            ds.create_variable(
+        g1.create_variable(
+            "enum_var1",
+            ("enum_dim",),
+            dtype=enum_type1,
+            fillvalue=enum_dict1["missing"],
+        )
+
+        with pytest.warns(UserWarning, match="is not accessible in current group"):
+            g1.create_variable(
                 "enum_var2",
                 ("enum_dim",),
                 dtype=enum_type2,
@@ -2250,40 +2280,57 @@ def test_enum_type(tmp_local_or_remote_netcdf):
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
         enum_var = ds["enum_var"]
-        assert enum_type.enum_dict == enum_dict
+        enum_var2 = ds["test1"]["enum_var2"]
+        assert isinstance(enum_type, EnumType)
+        assert enum_type.enum_dict == enum_dict1
         assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
         assert enum_var.attrs["_FillValue"] == 255
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
 
     # check if legacyapi can read them
     with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
         enum_var = ds["enum_var"]
-        assert enum_type.enum_dict == enum_dict
+        enum_var2 = ds["test1"]["enum_var2"]
+        assert isinstance(enum_type, legacyapi.EnumType)
+        assert enum_type.enum_dict == enum_dict1
         assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
         assert enum_var.attrs["_FillValue"] == 255
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
 
     if not tmp_local_or_remote_netcdf.startswith(remote_h5):
         # check if netCDF4-python can read them
         with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
             enum_type = ds.enumtypes["enum_t"]
             enum_var = ds["enum_var"]
-            assert enum_type.enum_dict == enum_dict
+            assert enum_type.enum_dict == enum_dict1
             assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
             assert enum_var._FillValue == 255
             assert repr(enum_var.datatype) == repr(enum_type)
             assert enum_var.datatype.name == "enum_t"
 
+
+def test_enum_type_legacyapi(tmp_local_or_remote_netcdf):
+    # test EnumType
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+    enum_dict2 = dict(one=1, two=2, three=3, missing=254)
     # second with legacyapi
     with legacyapi.Dataset(tmp_local_or_remote_netcdf, "w") as ds:
         ds.createDimension("enum_dim", 4)
-        enum_type = ds.createEnumType(np.uint8, "enum_t", enum_dict)
+        enum_type = ds.createEnumType(np.uint8, "enum_t", enum_dict1)
         v = ds.createVariable(
-            "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict["missing"]
+            "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict1["missing"]
         )
         v[0:3] = [1, 2, 3]
         with pytest.raises(ValueError) as e:
@@ -2291,137 +2338,135 @@ def test_enum_type(tmp_local_or_remote_netcdf):
         assert "assign illegal value(s)" in e.value.args[0]
 
         # create data/types in different subgroups
-        g = ds.create_group("test")
-        g1 = ds.create_group("test1")
-        enum_type2 = g.create_enumtype(np.uint8, "enum_t", enum_dict)
-        enum_type3 = g1.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        g1 = ds.createGroup("test1")
+        g2 = ds.createGroup("test2")
+        enum_type1 = g1.createEnumType(np.uint8, "enum_t1", enum_dict1)
+        enum_type2 = g2.createEnumType(np.uint8, "enum_t2", enum_dict2)
 
-        with pytest.raises(TypeError, match="not accessible in current group"):
-            g.create_variable(
-                "enum_var2",
-                ("enum_dim",),
-                dtype=enum_type3,
-                fillvalue=enum_dict2["missing"],
+        g1.createVariable(
+            "enum_var1", enum_type1, ("enum_dim",), fill_value=enum_dict1["missing"]
+        )
+        with pytest.warns(UserWarning, match="is not accessible in current group"):
+            g1.createVariable(
+                "enum_var2", enum_type2, ("enum_dim",), fill_value=enum_dict2["missing"]
             )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
         enum_var = ds["enum_var"]
-        assert enum_type.enum_dict == enum_dict
+        enum_var2 = ds["test1"]["enum_var2"]
+        assert isinstance(enum_type, EnumType)
+        assert enum_type.enum_dict == enum_dict1
         assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
         assert enum_var.attrs["_FillValue"] == 255
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
 
     # check if legacyapi can read them
     with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
         enum_var = ds["enum_var"]
-        assert enum_type.enum_dict == enum_dict
+        enum_var2 = ds["test1"]["enum_var2"]
+        assert isinstance(enum_type, legacyapi.EnumType)
+        assert enum_type.enum_dict == enum_dict1
         assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
         assert enum_var.attrs["_FillValue"] == 255
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
 
     if not tmp_local_or_remote_netcdf.startswith(remote_h5):
         # check if netCDF4-python can read them
         with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
             enum_type = ds.enumtypes["enum_t"]
             enum_var = ds["enum_var"]
-            assert enum_type.enum_dict == enum_dict
+            assert enum_type.enum_dict == enum_dict1
             assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
             assert enum_var._FillValue == 255
             assert repr(enum_var.datatype) == repr(enum_type)
             assert enum_var.datatype.name == "enum_t"
 
-    if not tmp_local_or_remote_netcdf.startswith(remote_h5):
-        # third with netCDF4 api
-        with netCDF4.Dataset(tmp_local_or_remote_netcdf, "w") as ds:
-            ds.createDimension("enum_dim", 4)
-            enum_type = ds.createEnumType(np.uint8, "enum_t", enum_dict)
-            v = ds.createVariable(
-                "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict["missing"]
-            )
-            v[0:3] = [1, 2, 3]
-            with pytest.raises(
-                ValueError, match="assign illegal value to Enum variable"
-            ):
-                v[3] = 5
 
-            g = ds.createGroup("test")
-            g1 = ds.createGroup("test1")
-            enum_type2 = g.createEnumType(np.uint8, "enum_t", enum_dict)
-            enum_type3 = g1.createEnumType(np.uint8, "enum_t", enum_dict2)
+def test_enum_type_netCDF4(tmp_local_netcdf):
+    # test EnumType
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+    enum_dict2 = dict(one=1, two=2, three=3, missing=254)
+    # third with netCDF4 api
+    with netCDF4.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("enum_dim", 4)
+        enum_type = ds.createEnumType(np.uint8, "enum_t", enum_dict1)
+        v = ds.createVariable(
+            "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict1["missing"]
+        )
+        v[0:3] = [1, 2, 3]
+        with pytest.raises(ValueError, match="assign illegal value to Enum variable"):
+            v[3] = 5
 
-            g.createVariable(
-                "enum_var2", enum_type3, ("enum_dim",), fill_value=enum_dict2["missing"]
-            )
+        g1 = ds.createGroup("test1")
+        g2 = ds.createGroup("test2")
+        enum_type1 = g1.createEnumType(np.uint8, "enum_t1", enum_dict1)
+        enum_type2 = g2.createEnumType(np.uint8, "enum_t2", enum_dict2)
 
-        # check, if new API can read them
-        with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
-            enum_type = ds.enumtypes["enum_t"]
-            enum_var = ds["enum_var"]
-            assert enum_type.enum_dict == enum_dict
-            assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
-            assert enum_var.attrs["_FillValue"] == 255
-            assert enum_var.datatype == enum_type
-            assert enum_var.datatype.name == "enum_t"
-            assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
+        g1.createVariable(
+            "enum_var1", enum_type1, ("enum_dim",), fill_value=enum_dict1["missing"]
+        )
+        g1.createVariable(
+            "enum_var2", enum_type2, ("enum_dim",), fill_value=enum_dict2["missing"]
+        )
 
-        # check if legacyapi can read them
-        with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
-            enum_type = ds.enumtypes["enum_t"]
-            enum_var = ds["enum_var"]
-            assert enum_type.enum_dict == enum_dict
-            assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
-            assert enum_var.attrs["_FillValue"] == 255
-            assert enum_var.datatype == enum_type
-            assert enum_var.datatype.name == "enum_t"
-            assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
-
-        # check if netCDF4-python can read them
-        with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
-            enum_type = ds.enumtypes["enum_t"]
-            enum_var = ds["enum_var"]
-            assert enum_type.enum_dict == enum_dict
-            assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
-            assert enum_var._FillValue == 255
-            assert repr(enum_var.datatype) == repr(enum_type)
-            assert enum_var.datatype.name == "enum_t"
-            with pytest.raises(IndexError, match="enum_var2 not found in /test"):
-                assert ds["test"]["enum_var2"].datatype == ds["test1"].enumtypes["enum_t"]
-
-
-def test_enum_type_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
-    # skip for netCDF4 writer for remote hsds files
-    if netcdf_write_module == netCDF4 and tmp_local_or_remote_netcdf.startswith(
-        remote_h5
-    ):
-        pytest.skip()
-
-    enum_dict = dict(one=1, two=2, three=3, missing=255)
-    with netcdf_write_module.Dataset(tmp_local_or_remote_netcdf, "w") as ds:
-        ds.createEnumType(np.uint8, "enum_t", enum_dict)
-
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
+    # check, if new API can read them
+    with h5netcdf.File(tmp_local_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
-        assert enum_type.enum_dict == enum_dict
-        assert enum_type.name == "enum_t"
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
+        enum_var = ds["enum_var"]
+        enum_var2 = ds["test1"]["enum_var2"]
+
         assert isinstance(enum_type, EnumType)
+        assert enum_type.enum_dict == enum_dict1
+        assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
+        assert enum_var.attrs["_FillValue"] == 255
+        assert enum_var.datatype == enum_type
+        assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
 
-    with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
+    # check if legacyapi can read them
+    with legacyapi.Dataset(tmp_local_netcdf, "r") as ds:
         enum_type = ds.enumtypes["enum_t"]
-        assert enum_type.enum_dict == enum_dict
-        assert enum_type.name == "enum_t"
-        assert isinstance(enum_type, legacyapi.EnumType)
+        enum_type2 = ds["test2"].enumtypes["enum_t2"]
+        enum_var = ds["enum_var"]
+        enum_var2 = ds["test1"]["enum_var2"]
 
-    if not tmp_local_or_remote_netcdf.startswith(remote_h5):
-        with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
-            enum_type = ds.enumtypes["enum_t"]
-            assert enum_type.enum_dict == enum_dict
-            assert enum_type.name == "enum_t"
-            assert isinstance(enum_type, netCDF4.EnumType)
+        assert isinstance(enum_type, legacyapi.EnumType)
+        assert enum_type.enum_dict == enum_dict1
+        assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
+        assert enum_var.attrs["_FillValue"] == 255
+        assert enum_var.datatype == enum_type
+        assert enum_var.datatype.name == "enum_t"
+        assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
+        assert enum_var2.datatype == enum_type2
+        assert enum_type2._h5ds.name == "/test2/enum_t2"
+
+    # check if netCDF4-python can read them
+    with netCDF4.Dataset(tmp_local_netcdf, "r") as ds:
+        enum_type = ds.enumtypes["enum_t"]
+        enum_var = ds["enum_var"]
+        assert enum_type.enum_dict == enum_dict1
+        assert array_equal(enum_var, np.ma.masked_equal([1, 2, 3, 255], 255))
+        assert enum_var._FillValue == 255
+        assert repr(enum_var.datatype) == repr(enum_type)
+        assert enum_var.datatype.name == "enum_t"
+        with pytest.raises(IndexError, match="enum_var2 not found in /test1"):
+            assert ds["test1"]["enum_var2"].datatype == ds["test2"].enumtypes["enum_t2"]
 
 
 @pytest.mark.parametrize("dtype", ["int", "int8", "uint16", "float32", "int64"])
