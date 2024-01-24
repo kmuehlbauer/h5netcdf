@@ -2224,6 +2224,29 @@ def test_ros3():
     f.close()
 
 
+@pytest.mark.parametrize("shared_user_types", [True, False])
+def test_shared_user_types(tmp_local_netcdf, shared_user_types):
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+
+    with h5netcdf.File(
+        tmp_local_netcdf, "w", shared_user_types=shared_user_types
+    ) as ds:
+        ds.dimensions = {"enum_dim": 4}
+        enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict1)
+        v = ds.create_variable(
+            "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict1["missing"]
+        )
+        v[0:3] = [1, 2, 3]
+
+        #
+        print(ds["/enum_t"])
+        ctype = v._get_committed_type()
+        assert ctype == (enum_type if shared_user_types else None)
+
+        dname = v.attrs._get_committed_type_name("_FillValue")
+        assert dname == (enum_type._h5ds.name if shared_user_types else None)
+
+
 def test_user_type_errors_new_api(tmp_local_or_remote_netcdf):
     enum_dict1 = dict(one=1, two=2, three=3, missing=254)
     enum_dict2 = dict(one=0, two=2, three=3, missing=255)
@@ -2380,13 +2403,13 @@ def test_user_type_errors_legacyapi(tmp_local_or_remote_netcdf):
                 ds.createVariable("enum_var6", enum_type, ("enum_dim",), fill_value=100)
 
 
-@pytest.mark.parametrize("global_types", [True, False])
-def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, global_types):
+@pytest.mark.parametrize("shared_user_types", [True, False])
+def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, shared_user_types):
     # test EnumType
     enum_dict1 = dict(one=1, two=2, three=3, missing=255)
     enum_dict2 = dict(one=1, two=2, three=3, missing=254)
 
-    kwargs = dict(global_types=global_types)
+    kwargs = dict(shared_user_types=shared_user_types)
 
     # first with new API
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w", **kwargs) as ds:
@@ -2411,24 +2434,13 @@ def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, global_types):
             fillvalue=enum_dict1["missing"],
         )
 
-        match = "is not accessible in current group"
-        context = switchcontext(
-            global_types,
-            true=pytest.warns(UserWarning, match=match),
-            false=pytest.raises(TypeError, match=match),
-        )
-
-        with context:
+        with pytest.raises(TypeError, match="is not accessible in current group"):
             g1.create_variable(
                 "enum_var2",
                 ("enum_dim",),
                 dtype=enum_type2,
                 fillvalue=enum_dict2["missing"],
             )
-
-    context = switchcontext(
-        global_types, false=pytest.raises(KeyError, match="enum_var2")
-    )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2444,7 +2456,7 @@ def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, global_types):
         assert enum_var.datatype.name == "enum_t"
         assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
 
-        with context:
+        with pytest.raises(KeyError, match="enum_var2"):
             enum_var2 = ds["test1"]["enum_var2"]
             assert enum_var2.datatype == enum_type2
             assert enum_type2._h5ds.name == "/test2/enum_t2"
@@ -2462,7 +2474,7 @@ def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, global_types):
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
         assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
-        with context:
+        with pytest.raises(KeyError, match="enum_var2"):
             enum_var2 = ds["test1"]["enum_var2"]
             assert enum_var2.datatype == enum_type2
             assert enum_type2._h5ds.name == "/test2/enum_t2"
@@ -2484,13 +2496,13 @@ def test_enum_type_h5netcdf(tmp_local_or_remote_netcdf, global_types):
                 assert enum_type2._h5ds.name == "/test2/enum_t2"
 
 
-@pytest.mark.parametrize("global_types", [True, False])
-def test_enum_type_legacyapi(tmp_local_or_remote_netcdf, global_types):
+@pytest.mark.parametrize("shared_user_types", [True, False])
+def test_enum_type_legacyapi(tmp_local_or_remote_netcdf, shared_user_types):
     # test EnumType
     enum_dict1 = dict(one=1, two=2, three=3, missing=255)
     enum_dict2 = dict(one=1, two=2, three=3, missing=254)
 
-    kwargs = dict(global_types=global_types)
+    kwargs = dict(shared_user_types=shared_user_types)
     # second with legacyapi
     with legacyapi.Dataset(tmp_local_or_remote_netcdf, "w", **kwargs) as ds:
         ds.createDimension("enum_dim", 4)
@@ -2512,21 +2524,10 @@ def test_enum_type_legacyapi(tmp_local_or_remote_netcdf, global_types):
             "enum_var1", enum_type1, ("enum_dim",), fill_value=enum_dict1["missing"]
         )
 
-        match = "is not accessible in current group"
-        context = switchcontext(
-            global_types,
-            true=pytest.warns(UserWarning, match=match),
-            false=pytest.raises(TypeError, match=match),
-        )
-
-        with context:
+        with pytest.raises(TypeError, match="is not accessible in current group"):
             g1.createVariable(
                 "enum_var2", enum_type2, ("enum_dim",), fill_value=enum_dict2["missing"]
             )
-
-    context = switchcontext(
-        global_types, false=pytest.raises(KeyError, match="enum_var2")
-    )
 
     # check, if new API can read them
     with h5netcdf.File(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2542,7 +2543,7 @@ def test_enum_type_legacyapi(tmp_local_or_remote_netcdf, global_types):
         assert enum_var.datatype.name == "enum_t"
         assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
 
-        with context:
+        with pytest.raises(KeyError, match="enum_var2"):
             enum_var2 = ds["test1"]["enum_var2"]
             assert enum_var2.datatype == enum_type2
             assert enum_type2._h5ds.name == "/test2/enum_t2"
@@ -2560,7 +2561,7 @@ def test_enum_type_legacyapi(tmp_local_or_remote_netcdf, global_types):
         assert enum_var.datatype == enum_type
         assert enum_var.datatype.name == "enum_t"
         assert enum_var.datatype._h5ds.name == enum_type._h5ds.name
-        with context:
+        with pytest.raises(KeyError, match="enum_var2"):
             enum_var2 = ds["test1"]["enum_var2"]
             assert enum_var2.datatype == enum_type2
             assert enum_type2._h5ds.name == "/test2/enum_t2"

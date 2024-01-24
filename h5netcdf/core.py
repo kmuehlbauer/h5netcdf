@@ -347,42 +347,36 @@ class BaseVariable(BaseObject):
     def __len__(self):
         return self.shape[0]
 
+    def _get_committed_type(self):
+        """Return committed user type"""
+        tname = self._h5ds._d(self._root._h5py.h5i.get_name(self._h5ds.id.get_type()))
+        return self._root[tname] if tname else tname
+
+    def _get_h5type(self):
+        """Return HDF5 type"""
+        return self._h5ds.id.get_type()
+
     @property
     def datatype(self):
         """Return numpy dtype or user defined type."""
 
+        # first check committed type (works only for shared user types)
         if self._root._h5py.__name__ == "h5py":
-            # retrieve name from dataset type
-            dname = self._h5ds._d(
-                self._root._h5py.h5i.get_name(self._h5ds.id.get_type())
-            )
-            # if not None we have a committed type and fetch the
-            # h5netcdf user type from the relevant group
-            if dname is not None and dname in self._root._h5file:
-                elems = dname.split("/")
-                group = self._root
-                if len(elems) > 2:
-                    group = group["/".join(elems[:-1])]
-                user_types = {
-                    **group._all_enumtypes,
-                    **group._all_vltypes,
-                    **group._all_cmptypes,
-                }
-                if elems[-1] in user_types:
-                    return user_types[elems[-1]]
+            # retrieve committed type from file
+            if (ctype := self._get_committed_type()) is not None:
+                return ctype
 
-        user_types = {
-            **self._parent._all_enumtypes,
-            **self._parent._all_vltypes,
-            **self._parent._all_cmptypes,
-        }
-        for tname, tid in user_types.items():
-            if self._root._h5py == h5py:
-                found = self._h5ds.id.get_type().equal(tid._h5ds.id)
+        # second check type equality
+        for tname, tid in self._parent.user_types.items():
+            if self._root._h5py.__name__ == "h5py":
+                if self._get_h5type() == tid._h5ds.id:
+                    return tid
             else:
-                found = self.dtype.metadata == tid.dtype.metadata
-            if found:
-                return tid
+                if (
+                    self.dtype == tid.dtype
+                    and self.dtype.metadata == tid.dtype.metadata
+                ):
+                    return tid
 
         # fallback to just dtype
         return self.dtype
@@ -587,9 +581,6 @@ def _unlabeled_dimension_mix(h5py_dataset):
 
 def _check_h5type(self, dtype, np_dtype):
     """Check and handle user types"""
-    from .legacyapi import Dataset
-
-    stacklevel = 5 if isinstance(self._parent, Dataset) else 4
 
     # is user type is given extract underlying h5py object
     # we just use the h5py user type here
@@ -603,27 +594,14 @@ def _check_h5type(self, dtype, np_dtype):
             )
         # check if committed type can be accessed in current group hierarchy
         if (
-            (
-                dname := {
-                    **self._all_enumtypes,
-                    **self._all_vltypes,
-                    **self._all_cmptypes,
-                }.get(dtype.name)
-            )
-            is None
-        ) or dname._h5ds.name != h5type.name:
+            (user_type := self.user_types.get(dtype.name)) is None
+        ) or user_type._h5ds.name != h5type.name:
             msg = (
                 f"Given dtype {dtype.name!r} is not accessible in current group"
-                f" {self._h5group.name!r} or any parent groups. Instead it's defined at"
-                f" {h5type.name!r}."
+                f" {self._h5group.name!r} or any parent group. Instead it's defined at"
+                f" {h5type.name!r}. Please create it in the current or any parent group."
             )
-            if self._root._global_types:
-                # issue warning only
-                msg += " This creates files which might not be readable by all applications."
-                warnings.warn(msg, stacklevel=stacklevel)
-            else:
-                msg += " Please create it in the current or any parent group."
-                raise TypeError(msg)
+            raise TypeError(msg)
         return h5type
 
     elif np_dtype.kind == "c":
@@ -954,8 +932,8 @@ class Group(Mapping):
         # check and handle user types
         h5type = _check_h5type(self, dtype, np_dtype)
 
-        # do not use shared/linked type if not explicitely requested
-        if not self._root._global_types:
+        # do not use shared/linked type if not requested
+        if self._root._shared_user_types is False:
             h5type = np_dtype
 
         # use numpy dtype for h5pyd
@@ -1165,11 +1143,18 @@ class Group(Mapping):
             **kwargs,
         )
 
+    @property
+    def user_types(self):
+        return {**self.enumtypes, **self.vltypes, **self.cmptypes}
+
     def _get_child(self, key):
         try:
             return self.variables[key]
         except KeyError:
-            return self.groups[key]
+            try:
+                return self.user_types[key]
+            except KeyError:
+                return self.groups[key]
 
     def __getitem__(self, key):
         if key.startswith("/"):
@@ -1185,9 +1170,11 @@ class Group(Mapping):
             yield name
         for name in self.variables:
             yield name
+        for name in self.user_types:
+            yield name
 
     def __len__(self):
-        return len(self.variables) + len(self.groups)
+        return len(self.variables) + len(self.groups) + len(self.user_types)
 
     @property
     def parent(self):
@@ -1376,7 +1363,7 @@ class File(Group):
         track_order_default = version.parse(h5py.__version__) >= version.parse("3.7.0")
         track_order = kwargs.pop("track_order", track_order_default)
 
-        self._global_types = kwargs.pop("global_types", False)
+        self._shared_user_types = kwargs.pop("shared_user_types", False)
 
         self.decode_vlen_strings = kwargs.pop("decode_vlen_strings", None)
         try:
