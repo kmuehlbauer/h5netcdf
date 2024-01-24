@@ -22,7 +22,6 @@ except ImportError:
 else:
     no_h5pyd = False
 
-
 NOT_A_VARIABLE = b"This is a netCDF dimension but not a netCDF variable."
 
 
@@ -351,6 +350,7 @@ class BaseVariable(BaseObject):
     @property
     def datatype(self):
         """Return numpy dtype or user defined type."""
+
         if self._root._h5py.__name__ == "h5py":
             # retrieve name from dataset type
             dname = self._h5ds._d(
@@ -371,15 +371,18 @@ class BaseVariable(BaseObject):
                 if elems[-1] in user_types:
                     return user_types[elems[-1]]
 
-        # h5pyd and in case of transient types, we need special handling
-        if (enum_dict := self._root._h5py.check_enum_dtype(self.dtype)) is not None:
-            for tid in self._parent._all_enumtypes.values():
-                if self._root._h5py == h5py:
-                    found = self._h5ds.id.get_type().equal(tid._h5ds.id)
-                else:
-                    found = tid.enum_dict == enum_dict
-                if found:
-                    return tid
+        user_types = {
+            **self._parent._all_enumtypes,
+            **self._parent._all_vltypes,
+            **self._parent._all_cmptypes,
+        }
+        for tname, tid in user_types.items():
+            if self._root._h5py == h5py:
+                found = self._h5ds.id.get_type().equal(tid._h5ds.id)
+            else:
+                found = self.dtype.metadata == tid.dtype.metadata
+            if found:
+                return tid
 
         # fallback to just dtype
         return self.dtype
@@ -584,6 +587,10 @@ def _unlabeled_dimension_mix(h5py_dataset):
 
 def _check_h5type(self, dtype, np_dtype):
     """Check and handle user types"""
+    from .legacyapi import Dataset
+
+    stacklevel = 5 if isinstance(self._parent, Dataset) else 4
+
     # is user type is given extract underlying h5py object
     # we just use the h5py user type here
     if isinstance(dtype, (CompoundType, EnumType, VLType)):
@@ -605,13 +612,18 @@ def _check_h5type(self, dtype, np_dtype):
             )
             is None
         ) or dname._h5ds.name != h5type.name:
-            # issue warning only before decision is made to raise here
             msg = (
                 f"Given dtype {dtype.name!r} is not accessible in current group"
-                f" {self._h5group.name!r} or above. Instead it's defined at"
-                f" {h5type.name!r}. Please create it in the current group or above."
+                f" {self._h5group.name!r} or any parent groups. Instead it's defined at"
+                f" {h5type.name!r}."
             )
-            warnings.warn(msg)
+            if self._root._global_types:
+                # issue warning only
+                msg += " This creates files which might not be readable by all applications."
+                warnings.warn(msg, stacklevel=stacklevel)
+            else:
+                msg += " Please create it in the current or any parent group."
+                raise TypeError(msg)
         return h5type
 
     elif np_dtype.kind == "c":
@@ -642,24 +654,76 @@ def _check_fillvalue(self, fillvalue, dtype, np_dtype):
     # see https://github.com/h5netcdf/h5netcdf/issues/182
     from .legacyapi import Dataset, _get_default_fillvalue
 
+    stacklevel = 5 if isinstance(self._parent, Dataset) else 4
+
     h5fillvalue = fillvalue
 
     # if no fillvalue is provided take netcdf4 default values for legacyapi
     if fillvalue is None:
-        if isinstance(self._parent._root, Dataset):
+        if isinstance(self._parent, Dataset):
             h5fillvalue = _get_default_fillvalue(np_dtype)
 
-    # handling for EnumType's
+    # handling for EnumType
     if dtype is not None and isinstance(dtype, EnumType):
-        if h5fillvalue not in dtype.enum_dict.values() and h5fillvalue != 0:
-            filltype = "default" if fillvalue is None else "specified"
-            warnings.warn(
-                f"Creating variable with {filltype} fill_value {h5fillvalue!r}"
-                f" which is not defined in enum type {dtype!r}."
-                f" This will create non-conforming netcdf4 files."
-            )
+        if fillvalue is None:
+            # 1. we need to warn the user that writing enums with default values
+            # which are defined in the enum dict will mask those values
+            if (h5fillvalue or 0) in dtype.enum_dict.values():
+                reverse = dict((v, k) for k, v in dtype.enum_dict.items())
+                msg = (
+                    f"Creating variable with default fill_value {h5fillvalue or 0!r}"
+                    f" which IS defined in enum type {dtype!r}."
+                    f" This will mask entry {{{reverse[h5fillvalue or 0]!r}: {h5fillvalue or 0!r}}}."
+                )
+                warnings.warn(msg, stacklevel=stacklevel)
+            else:
+                # 2. we need to raise if the default fillvalue is not within the enum dict
+                if (
+                    h5fillvalue is not None
+                    and h5fillvalue not in dtype.enum_dict.values()
+                ):
+                    msg = (
+                        f"Creating variable with default fill_value {h5fillvalue!r}"
+                        f" which IS NOT defined in enum type {dtype!r}."
+                        f" Please provide a fitting fill_value or enum type."
+                    )
+                    raise ValueError(msg)
+                if h5fillvalue is None and 0 not in dtype.enum_dict.values():
+                    # 3. we should inform the user that a fillvalue of '0'
+                    # will be interpreted as _UNDEFINED in netcdf-c
+                    # if it is not defined in the enum dict
+                    msg = (
+                        f"Creating variable with default fill_value {0!r}"
+                        f" which IS NOT defined in enum type {dtype!r}."
+                        f" This will be interpreted as '_UNDEFINED' by netcdf-c."
+                    )
+                    warnings.warn(msg, stacklevel=stacklevel)
+        else:
+            if h5fillvalue not in dtype.enum_dict.values():
+                # 4. we should inform the user that a fillvalue of '0'
+                # will be interpreted as _UNDEFINED in netcdf-c
+                # if it is not defined in the enum dict
+                if h5fillvalue == 0:
+                    msg = (
+                        f"Creating variable with specified fill_value {h5fillvalue!r}"
+                        f" which IS NOT defined in enum type {dtype!r}."
+                        f" This will be interpreted as '_UNDEFINED' by netcdf-c."
+                    )
+                    warnings.warn(msg, stacklevel=stacklevel)
+                # 5. we need to raise if the fillvalue is not within the enum_dict
+                else:
+                    msg = (
+                        f"Creating variable with specified fill_value {h5fillvalue!r}"
+                        f" which IS NOT defined in enum type {dtype!r}."
+                        f" Please provide a matching fill_value or enum type."
+                    )
+                    raise ValueError(msg)
+
+    if fillvalue is not None:
+        # cast to wanted type
         fillvalue = np.array(h5fillvalue).astype(np_dtype)
         h5fillvalue = fillvalue
+
     return fillvalue, h5fillvalue
 
 
@@ -890,6 +954,14 @@ class Group(Mapping):
         # check and handle user types
         h5type = _check_h5type(self, dtype, np_dtype)
 
+        # do not use shared/linked type if not explicitely requested
+        if not self._root._global_types:
+            h5type = np_dtype
+
+        # use numpy dtype for h5pyd
+        if self._root._h5py.__name__ == "h5pyd":
+            h5type = np_dtype
+
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
                 "scale-offset filters",
@@ -958,10 +1030,6 @@ class Group(Mapping):
 
         # fill value handling
         fillvalue, h5fillvalue = _check_fillvalue(self, fillvalue, dtype, np_dtype)
-
-        # use numpy dtype for h5pyd
-        if self._root._h5py.__name__ == "h5pyd":
-            h5type = np_dtype
 
         # create hdf5 variable
         self._h5group.create_dataset(
@@ -1308,6 +1376,8 @@ class File(Group):
         track_order_default = version.parse(h5py.__version__) >= version.parse("3.7.0")
         track_order = kwargs.pop("track_order", track_order_default)
 
+        self._global_types = kwargs.pop("global_types", False)
+
         self.decode_vlen_strings = kwargs.pop("decode_vlen_strings", None)
         try:
             if isinstance(path, str):
@@ -1466,7 +1536,7 @@ class File(Group):
                         f"to NetCDF-4 standard and might not be readable by other "
                         f"netcdf tools. Consider using a different extension."
                     )
-                    warnings.warn(msg, UserWarning, stacklevel=2)
+                    warnings.warn(msg, stacklevel=2)
                 # remove _NCProperties if invalid_netcdf if exists
                 if "_NCProperties" in self.attrs._h5attrs:
                     del self.attrs._h5attrs["_NCProperties"]
