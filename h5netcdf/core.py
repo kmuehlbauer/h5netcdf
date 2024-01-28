@@ -182,6 +182,7 @@ class BaseVariable(BaseObject):
     def __init__(self, parent, name, dimensions=None):
         super().__init__(parent, name)
         self._dimensions = dimensions
+        self._datatype = None
         self._initialized = True
 
     @property
@@ -351,27 +352,38 @@ class BaseVariable(BaseObject):
     def __len__(self):
         return self.shape[0]
 
-    @property
-    def datatype(self):
-        """Return numpy dtype or user defined type."""
+    def _get_usertype(self):
         # this is really painful as we have to iterate over all types
         # and check equality
+        dtype = self.dtype
         usertype = None
-        metadata = self.dtype.metadata if self.dtype.metadata else {}
-        if "enum" in metadata:
-            usertype = self._parent._all_enumtypes
-        elif "vlen" in metadata:
-            usertype = self._parent._all_vltypes
-        elif self.dtype.names is not None or "complex" in self.dtype.name:
-            usertype = self._parent._all_cmptypes
+        metadata = getattr(dtype, "metadata", {})
+        if metadata:
+            if "enum" in metadata:
+                usertype = self._parent._all_enumtypes
+            elif "vlen" in metadata:
+                usertype = self._parent._all_vltypes
+            elif dtype.names is not None or "complex" in dtype.name:
+                usertype = self._parent._all_cmptypes
 
-        if usertype is not None:
-            for tid in usertype.values():
-                if self.dtype == tid.dtype and metadata == tid.dtype.metadata:
-                    return tid
+            # iterate over related usertypes and compare dtype
+            if usertype is not None:
+                for tid in usertype.values():
+                    if dtype == tid.dtype and metadata == tid.dtype.metadata:
+                        return tid
+        return dtype
 
-        # fallback to just dtype
-        return self.dtype
+    @property
+    def datatype(self):
+        """Return datatype.
+
+        Returns numpy dtype (for primitive types) or VLType/CompoundType/EnumType
+        instance (for compound, vlen or enum data types).
+        """
+        # cache datatype on first request
+        if self._datatype is None:
+            self._datatype = self._get_usertype()
+        return self._datatype
 
     def _get_padding(self, key):
         """Return padding if needed, defaults to False."""
@@ -1161,10 +1173,10 @@ class Group(Mapping):
     def variables(self):
         return Frozen(self._variables)
 
-    def _add_usertype(self, usertype):
+    def _add_usertype(self, h5type):
         """Add usertype to related usertype dict on read."""
-        name = usertype.name.split("/")[-1]
-        dtype = usertype.dtype
+        name = h5type.name.split("/")[-1]
+        dtype = h5type.dtype
         metadata = dtype.metadata if dtype.metadata else {}
         if "enum" in metadata:
             self._enumtypes.add(name)
