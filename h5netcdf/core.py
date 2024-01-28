@@ -182,6 +182,7 @@ class BaseVariable(BaseObject):
     def __init__(self, parent, name, dimensions=None):
         super().__init__(parent, name)
         self._dimensions = dimensions
+        self._datatype = None
         self._initialized = True
 
     @property
@@ -328,7 +329,16 @@ class BaseVariable(BaseObject):
             else:
                 value = self.dtype.type(fillvalue)
 
-        self.attrs["_FillValue"] = value
+        # self.attrs["_FillValue"] = value
+
+        # need to use create-function in order
+        # to provide correct committed/named type
+        print(self)
+        print(self.datatype)
+        if isinstance(self.datatype, UserType):
+            self.attrs._h5attrs.create("_FillValue", value, dtype=self.datatype._h5ds)
+        else:
+            self.attrs["_FillValue"] = value
 
     @property
     def dimensions(self):
@@ -354,24 +364,30 @@ class BaseVariable(BaseObject):
     @property
     def datatype(self):
         """Return numpy dtype or user defined type."""
-        # this is really painful as we have to iterate over all types
-        # and check equality
-        usertype = None
-        metadata = self.dtype.metadata if self.dtype.metadata else {}
-        if "enum" in metadata:
-            usertype = self._parent._all_enumtypes
-        elif "vlen" in metadata:
-            usertype = self._parent._all_vltypes
-        elif self.dtype.names is not None or "complex" in self.dtype.name:
-            usertype = self._parent._all_cmptypes
+        if self._datatype is None:
 
-        if usertype is not None:
-            for tid in usertype.values():
-                if self.dtype == tid.dtype and metadata == tid.dtype.metadata:
-                    return tid
+            # keep self.dtype
+            self._datatype = self._h5ds.dtype
+            dtype = self._h5ds.dtype
 
-        # fallback to just dtype
-        return self.dtype
+            # this is really painful as we have to iterate over all types
+            # and check equality
+            usertype = None
+            metadata = dtype.metadata if dtype.metadata else {}
+            if "enum" in metadata:
+                usertype = self._parent._all_enumtypes
+            elif "vlen" in metadata:
+                usertype = self._parent._all_vltypes
+            elif dtype.names is not None or "complex" in dtype.name:
+                usertype = self._parent._all_cmptypes
+
+            if usertype is not None:
+                for tid in usertype.values():
+                    if dtype == tid.dtype and metadata == tid.dtype.metadata:
+                        self._datatype = tid
+                        break
+
+        return self._datatype
 
     def _get_padding(self, key):
         """Return padding if needed, defaults to False."""
