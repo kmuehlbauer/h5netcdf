@@ -139,6 +139,13 @@ class BaseObject:
         return self._h5ds.dtype
 
 
+h5type_mapping = {
+    6: "H5T_COMPOUND",
+    8: "H5T_ENUM",
+    9: "H5T_VLEN",
+}
+
+
 class UserType(BaseObject):
     _cls_name = "h5netcdf.UserType"
 
@@ -153,6 +160,14 @@ class UserType(BaseObject):
             return f"<Closed {self._cls_name!r}>"
         header = f"<class {self._cls_name!r}: name = {self.name!r}, numpy dtype = {self.dtype!r}"
         return header
+
+    @property
+    def h5type(self):
+        h5id = self._h5ds.id
+        if self._root._h5py.__name__ == "h5pyd":
+            return h5id.type_json["class"]
+        else:
+            return h5type_mapping[h5id.get_class()]
 
 
 class EnumType(UserType):
@@ -353,25 +368,31 @@ class BaseVariable(BaseObject):
         return self.shape[0]
 
     def _get_usertype(self):
+        h5id = self._h5ds.id
+
+        if self._root._h5py.__name__ == "h5pyd":
+            tkey = h5id.type_json["class"]
+        else:
+            tkey = h5type_mapping[h5id.get_type().get_class()]
+
+        usertype = self._parent._usertype_mapping[tkey]
+
         # this is really painful as we have to iterate over all types
         # and check equality
-        dtype = self.dtype
-        usertype = None
-        metadata = getattr(dtype, "metadata", {})
-        if metadata:
-            if "enum" in metadata:
-                usertype = self._parent._all_enumtypes
-            elif "vlen" in metadata:
-                usertype = self._parent._all_vltypes
-            elif dtype.names is not None or "complex" in dtype.name:
-                usertype = self._parent._all_cmptypes
-
-            # iterate over related usertypes and compare dtype
-            if usertype is not None:
-                for tid in usertype.values():
-                    if dtype == tid.dtype and metadata == tid.dtype.metadata:
+        # iterate over related usertypes and compare dtype
+        if usertype is not None:
+            for tid in usertype.values():
+                if self._root._h5py.__name__ == "h5py":
+                    # check types directly for h5py
+                    if h5id.get_type() == tid._h5ds.id:
                         return tid
-        return dtype
+                else:
+                    # compare dtypes for h5pyd
+                    metadata = getattr(self.dtype, "metadata", {})
+                    if self.dtype == tid.dtype and metadata == tid.dtype.metadata:
+                        return tid
+
+        return self.dtype
 
     @property
     def datatype(self):
@@ -382,6 +403,7 @@ class BaseVariable(BaseObject):
         """
         # cache datatype on first request
         if self._datatype is None:
+            print("get_datatype")
             self._datatype = self._get_usertype()
         return self._datatype
 
@@ -613,7 +635,7 @@ def _check_dtype(self, dtype):
                 f" file {dtype._root._h5file.filename}"
             )
         # check if committed type can be accessed in current group hierarchy
-        user_type = self._get_usertype(dtype)
+        user_type = self._get_usertype(h5type)
         if user_type is None:
             msg = (
                 f"Given dtype {dtype.name!r} is not accessible in current group"
@@ -1173,32 +1195,41 @@ class Group(Mapping):
     def variables(self):
         return Frozen(self._variables)
 
+    @property
+    def _usertype_mapping(self):
+        return {
+            "H5T_COMPOUND": self._all_cmptypes,
+            "H5T_ENUM": self._all_enumtypes,
+            "H5T_VLEN": self._all_vltypes,
+        }
+
     def _add_usertype(self, h5type):
         """Add usertype to related usertype dict on read."""
-        name = h5type.name.split("/")[-1]
-        dtype = h5type.dtype
-        metadata = dtype.metadata if dtype.metadata else {}
-        if "enum" in metadata:
-            self._enumtypes.add(name)
-        elif "vlen" in metadata:
-            self._vltypes.add(name)
-        elif dtype.names is not None or "complex" in dtype.name:
-            self._cmptypes.add(name)
-        else:
-            raise ValueError(f"Undefined user type {name}!r.")
 
-    def _get_usertype(self, usertype):
-        """Get usertype from related usertype dict"""
-        dtype = usertype.dtype
-        metadata = dtype.metadata if dtype.metadata else {}
-        if "enum" in metadata:
-            return self._all_enumtypes.get(usertype.name)
-        if "vlen" in metadata:
-            return self._all_vltypes.get(usertype.name)
-        elif dtype.names is not None or "complex" in dtype.name:
-            return self._all_cmptypes.get(usertype.name)
+        name = h5type.name.split("/")[-1]
+
+        if self._root._h5py.__name__ == "h5pyd":
+            tkey = h5type.id.type_json["class"]
         else:
-            raise ValueError(f"Undefined user type {dtype}!r.")
+            tkey = h5type_mapping[h5type.id.get_class()]
+
+        self._usertype_mapping[tkey].maps[0].add(name)
+
+    def _get_usertype(self, h5type):
+        """Get usertype from related usertype dict"""
+        h5id = h5type.id
+
+        if self._root._h5py.__name__ == "h5pyd":
+            tkey = h5id.type_json["class"]
+        else:
+            try:
+                h5id = h5id.get_type()
+            except AttributeError:
+                pass
+            finally:
+                tkey = h5type_mapping[h5id.get_class()]
+
+        return self._usertype_mapping[tkey].get(h5type.name.split("/")[-1])
 
     @property
     def enumtypes(self):
