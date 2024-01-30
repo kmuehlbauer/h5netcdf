@@ -169,6 +169,14 @@ class UserType(BaseObject):
         else:
             return h5type_mapping[h5id.get_class()]
 
+    @property
+    def _ctype(self):
+        if self._root._h5py.__name__ == "h5pyd":
+            print(self._h5ds.id.uuid)
+            return self.dtype, self.dtype.metadata
+        else:
+            return self._h5ds.id
+
 
 class EnumType(UserType):
     _cls_name = "h5netcdf.EnumType"
@@ -367,32 +375,42 @@ class BaseVariable(BaseObject):
     def __len__(self):
         return self.shape[0]
 
-    def _get_usertype(self):
+    @property
+    def _h5type(self):
         h5id = self._h5ds.id
-
         if self._root._h5py.__name__ == "h5pyd":
-            tkey = h5id.type_json["class"]
+            return h5id.type_json["class"]
         else:
-            tkey = h5type_mapping[h5id.get_type().get_class()]
+            return h5type_mapping[h5id.get_type().get_class()]
 
-        usertype = self._parent._usertype_mapping[tkey]
+    @property
+    def _ctype(self):
+        if self._root._h5py.__name__ == "h5pyd":
+            print(dir(self._h5ds.id))
+            print(self._h5ds.id.obj_json)
+            return self.dtype, self.dtype.metadata
+        else:
+            return self._h5ds.id.get_type()
 
+    def _istype(self, tid):
+        if self._root._h5py.__name__ == "h5py":
+            # check types directly for h5py
+            return self._h5sd.id.get_type() == tid._h5ds.id
+        else:
+            # compare dtypes for h5pyd
+            metadata = getattr(self.dtype, "metadata", {})
+            return self.dtype == tid.dtype and metadata == tid.dtype.metadata
+
+    def _get_usertype(self):
+        usertype = self._parent._usertype_mapping[self._h5type]
         # this is really painful as we have to iterate over all types
         # and check equality
-        # iterate over related usertypes and compare dtype
         if usertype is not None:
             for tid in usertype.values():
-                if self._root._h5py.__name__ == "h5py":
-                    # check types directly for h5py
-                    if h5id.get_type() == tid._h5ds.id:
-                        return tid
-                else:
-                    # compare dtypes for h5pyd
-                    metadata = getattr(self.dtype, "metadata", {})
-                    if self.dtype == tid.dtype and metadata == tid.dtype.metadata:
-                        return tid
+                if self._ctype == tid._ctype:
+                    return tid
 
-        return self.dtype
+        return None
 
     @property
     def datatype(self):

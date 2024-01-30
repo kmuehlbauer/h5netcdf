@@ -2409,9 +2409,11 @@ def test_enum_type(tmp_local_or_remote_netcdf):
     with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as ds:
         ds.dimensions = {"enum_dim": 4}
         enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict)
+        print("h5type:", enum_type.h5type)
         v = ds.create_variable(
             "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict["missing"]
         )
+        print("h5type:", v._h5type)
         v[0:3] = [1, 2, 3]
         with pytest.raises(ValueError) as e:
             v[3] = 5
