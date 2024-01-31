@@ -373,7 +373,12 @@ class BaseVariable(BaseObject):
             else:
                 value = self.dtype.type(fillvalue)
 
-        self.attrs["_FillValue"] = value
+        # need to use create-function in order
+        # to provide correct committed/named type
+        dtype = (
+            self.datatype._h5ds if isinstance(self.datatype, UserType) else self.dtype
+        )
+        self.attrs._h5attrs.create("_FillValue", value, dtype=dtype)
 
     @property
     def dimensions(self):
@@ -395,6 +400,14 @@ class BaseVariable(BaseObject):
 
     def __len__(self):
         return self.shape[0]
+
+    def _get_committed_type_name(self):
+        """Return committed user type"""
+        print(self._h5ds.id.get_type())
+        tname = self._h5ds._d(self._root._h5py.h5i.get_name(self._h5ds.id.get_type()))
+        print("TNAME:", tname)
+        if tname is not None:
+            return tname.split("/")[-1]
 
     @property
     def _h5type_identifier(self):
@@ -425,9 +438,13 @@ class BaseVariable(BaseObject):
         Returns numpy dtype (for primitive types) or VLType/CompoundType/EnumType
         instance (for compound, vlen or enum data types).
         """
+        cname = self._get_committed_type_name()
+        usertype = self._parent._get_usertype_dict(self._h5type_identifier)
+        if cname is not None:
+            return usertype[cname]
+
         # this is really painful as we have to iterate over all types
         # and check equality
-        usertype = self._parent._get_usertype_dict(self._h5type_identifier)
         if usertype is not None:
             for tid in usertype.values():
                 if self._h5datatype == tid._h5datatype:
@@ -670,14 +687,15 @@ def _check_dtype(self, dtype):
                 f" {h5type.name!r}. Please create it in the current or any parent group."
             )
             raise TypeError(msg)
-        # this checks for committed types which are overridden by re-definitions
-        elif (actual := user_type._h5ds.name) != h5type.name:
-            msg = (
-                f"Given dtype {dtype.name!r} is defined at {h5type.name!r}."
-                f" Another dtype with same name is defined at {actual!r} and"
-                f" would override it."
-            )
-            raise TypeError(msg)
+        # # this checks for committed types which are overridden by re-definitions
+        # elif (actual := user_type._h5ds.name) != h5type.name:
+        #     msg = (
+        #         f"Given dtype {dtype.name!r} is defined at {h5type.name!r}."
+        #         f" Another dtype with same name is defined at {actual!r} and"
+        #         f" would override it."
+        #     )
+        #     raise TypeError(msg)
+        dtype = h5type
     elif np.dtype(dtype).kind == "c":
         itemsize = np.dtype(dtype).itemsize
         try:
@@ -692,7 +710,7 @@ def _check_dtype(self, dtype):
         # if dname is not available in current group-path
         # create and commit type in current group
         if dname not in self._all_cmptypes:
-            dtype = self.create_cmptype(dtype, dname).dtype
+            dtype = self.create_cmptype(dtype, dname)._h5ds
 
     return dtype
 

@@ -2216,6 +2216,116 @@ def test_ros3():
     f.close()
 
 
+def test_shared_user_types(tmp_local_netcdf):
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+    enum_dict2 = dict(one=1, two=2, three=3, missing=254)
+
+    with h5netcdf.File(tmp_local_netcdf, "w") as ds:
+        ds.dimensions = {"enum_dim": 4}
+        enum_type = ds.create_enumtype(np.uint8, "enum_t", enum_dict1)
+        v = ds.create_variable(
+            "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict1["missing"]
+        )
+        v[0:3] = [1, 2, 3]
+
+        #
+        ctype = v.datatype
+        assert enum_type.name == v._get_committed_type_name()
+        assert ctype == enum_type
+
+        dname = v.attrs._get_committed_type_name("_FillValue")
+        assert dname == enum_type._h5ds.name
+
+        g = ds.create_group("test")
+        v1 = g.create_variable(
+            "enum_var", ("enum_dim",), dtype=enum_type, fillvalue=enum_dict1["missing"]
+        )
+        v1[0:3] = [1, 2, 3]
+
+        print("CHECK", v1.datatype._h5ds)
+        # print("H5L_get_info:", dir(h5py.h5l.get_info(v1.datatype._h5ds.id)))
+        print(
+            "H5L_get_info:",
+            dir(h5py.h5r.get_name(v1.datatype._h5ds.id, ds._h5group.id)),
+        )
+        print("H5O_get_info:", dir(h5py.h5o.get_info(v1.datatype._h5ds.id)))
+        hoinfo = h5py.h5o.get_info(v1.datatype._h5ds.id)
+        print(hoinfo.hdr, hoinfo.rc, hoinfo.type)
+        print(dir(hoinfo.hdr))
+        print(dir(hoinfo.hdr.mesg))
+        print(hoinfo.hdr.nmesgs)
+        g.create_enumtype(np.uint8, "enum_t", enum_dict2)
+        ctype = v1.datatype
+        assert enum_type.name == v1._get_committed_type_name()
+        assert ctype == enum_type
+
+
+def test_shared_user_types_legacy(tmp_local_netcdf, netcdf_write_module):
+    enum_dict1 = dict(one=1, two=2, three=3, missing=255)
+    enum_dict2 = dict(one=1, two=2, three=3, missing=254)
+
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "w") as ds:
+        ds.createDimension("enum_dim", 4)
+        enum_type = ds.createEnumType(np.uint8, "enum_t", enum_dict1)
+        v = ds.createVariable(
+            "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict1["missing"]
+        )
+        v[0:3] = [1, 2, 3]
+
+        #
+        ctype = v.datatype
+        # assert enum_type.name == v._get_committed_type_name()
+        assert ctype == enum_type
+
+        # dname = v.attrs._get_committed_type_name("_FillValue")
+        # assert dname == enum_type._h5ds.name
+
+        g = ds.createGroup("test")
+        # enum_type2 = g.createEnumType(np.uint8, "enum_t", enum_dict2)
+        v1 = g.createVariable(
+            "enum_var", enum_type, ("enum_dim",), fill_value=enum_dict1["missing"]
+        )
+        v1[0:3] = [1, 2, 3]
+        g.createEnumType(np.uint8, "enum_t", enum_dict2)
+        # print("CHECK", v1.datatype._h5ds)
+        # #print("H5L_get_info:", dir(h5py.h5l.get_info(v1.datatype._h5ds.id)))
+        # print("H5L_get_info:", dir(h5py.h5r.get_name(v1.datatype._h5ds.id, ds._h5group.id)))
+        # print("H5O_get_info:", dir(h5py.h5o.get_info(v1.datatype._h5ds.id)))
+        # hoinfo = h5py.h5o.get_info(v1.datatype._h5ds.id)
+        # print(hoinfo.hdr, hoinfo.rc, hoinfo.type)
+        # print(dir(hoinfo.hdr))
+        # print(dir(hoinfo.hdr.mesg))
+        # print(hoinfo.hdr.nmesgs)
+
+        ctype = v1.datatype
+        print(ctype)
+        print(enum_type)
+        # assert enum_type.name == v1._get_committed_type_name()
+        # assert ctype == enum_type
+
+    with netcdf_write_module.Dataset(tmp_local_netcdf, "r") as ds:
+        v = ds["enum_var"]
+        enum_type = ds.enumtypes["enum_t"]
+        ctype = v.datatype
+        print(ctype)
+        print(enum_type)
+
+        # assert enum_type.name == v._get_committed_type_name()
+        # assert ctype == enum_type
+
+        # dname = v.attrs._get_committed_type_name("_FillValue")
+        # assert dname == enum_type._h5ds.name
+        g = ds["test"]
+        g.enumtypes["enum_t"]
+        v1 = g["enum_var"]
+
+        ctype = v1.datatype
+        # print(ctype._h5ds)
+        # print(enum_type._h5ds)
+        # assert enum_type.name == v1._get_committed_type_name()
+        # assert ctype == enum_type
+
+
 def test_user_type_errors_new_api(tmp_local_or_remote_netcdf):
     enum_dict1 = dict(one=1, two=2, three=3, missing=254)
     enum_dict2 = dict(one=0, two=2, three=3, missing=255)
