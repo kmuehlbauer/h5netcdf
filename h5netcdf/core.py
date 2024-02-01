@@ -517,6 +517,8 @@ class BaseVariable(BaseObject):
     def __setitem__(self, key, value):
         from .legacyapi import Dataset
 
+        print("key, value", key, value)
+
         # check if provided values match enumtype values
         if enum_dict := self._root._h5py.check_enum_dtype(self.dtype):
             mask = np.isin(value, list(enum_dict.values()))
@@ -1379,6 +1381,17 @@ class Group(Mapping):
         """
         # wrap in numpy dtype first
         datatype = np.dtype(datatype)
+
+        # iterate and make chararray from strings
+        # see https://github.com/Unidata/netcdf4-python/issues/773
+        fields = []
+        for name, (v, offset) in datatype.fields.items():
+            if v.kind == "S":
+                fields.append((name, ("S1", (v.itemsize,))))
+            else:
+                fields.append((name, v.base))
+        datatype = np.dtype(fields)
+        print(datatype)
         self._h5group[datatype_name] = datatype
         # create compound class instance
         cmptype = self._cmptype_cls(self, datatype_name)
