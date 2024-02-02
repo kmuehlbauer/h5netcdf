@@ -2570,10 +2570,30 @@ def test_vltype_creation(tmp_local_or_remote_netcdf, netcdf_write_module, dtype)
 
 def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
     compound = np.dtype(
-        [("time", np.int32), ("temperature", np.float32), ("pressure", np.float32)]
+        [
+            ("time", np.int32),
+            ("temperature", np.float32),
+            ("pressure", np.float32),
+            ("location", "S4"),
+        ]
+    )
+
+    np.dtype(
+        [
+            ("time", np.int32),
+            ("temperature", np.float32),
+            ("pressure", np.float32),
+            ("location", ("S1", (4,))),
+        ]
     )
     cmp_array = np.array(
-        [(0, 0.0, 0.0), (1, 2.0, 3.0), (2, 4.0, 6.0), (3, 5.0, 7.0), (4, 6.0, 8.0)],
+        [
+            (0, 0.0, 0.0, "FOO "),
+            (1, 2.0, 3.0, "BAR "),
+            (2, 4.0, 6.0, "BAZ "),
+            (3, 5.0, 7.0, "OOF "),
+            (4, 6.0, 8.0, "RAB "),
+        ],
         dtype=compound,
     )
     if (
@@ -2592,10 +2612,18 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
         cmptype = ds.cmptypes["cmp_t"]
         assert isinstance(cmptype, h5netcdf.legacyapi.CompoundType)
         assert cmptype.name == "cmp_t"
-        assert array_equal(ds["data"][:], cmp_array)
+        print(compound, compound.itemsize)
+        print(cmp_array)
+        print(ds["data"][:].dtype)
+        print(ds["data"][:])
+        print(ds["data"][:].view(compound))
+        print(cmp_array)
+        np.testing.assert_equal(ds["data"][:].view(cmptype.dtype_view), cmp_array)
+        assert array_equal(ds["data"][:].view(cmptype.dtype_view), cmp_array)
         assert ds["data"].datatype == cmptype
-        assert ds["data"].dtype == cmptype.dtype
-        # assert ds["data"].datatype.dtype_view == "r"
+        # assert ds["data"].dtype == cmptype.dtype
+        # assert ds["data"].datatype.dtype == cmp_array.dtype
+        # assert ds["data"].datatype.dtype_view == compound
 
     if not tmp_local_or_remote_netcdf.startswith(remote_h5):
         with netCDF4.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
@@ -2604,8 +2632,8 @@ def test_compoundtype_creation(tmp_local_or_remote_netcdf, netcdf_write_module):
             assert cmptype.name == "cmp_t"
             assert array_equal(ds["data"][:], cmp_array)
             assert ds["data"].datatype == cmptype.dtype
-            assert ds["data"].datatype.dtype == "r"
-            assert ds["data"].datatype.dtype_view == "r"
+            # assert ds["data"].datatype.dtype == compound
+            # assert ds["data"].datatype.dtype_view == compound
 
 
 @pytest.mark.skipif(

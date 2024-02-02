@@ -164,7 +164,7 @@ def _get_h5dstype_identifier(h5type):
         h5typeid = h5type.id.get_type().get_class()
     except AttributeError:
         # h5pyd second
-        h5typeid = _h5type_mapping[h5type.id.type_json["class"]]
+        h5typeid = _h5type_mapping.get(h5type.id.type_json["class"])
     return h5typeid
 
 
@@ -226,7 +226,38 @@ class CompoundType(UserType):
 
     @property
     def dtype_view(self):
-        return self.dtype_view
+        fields = []
+        dtype_view = None
+        if self.dtype.names is not None:
+            for name in self.dtype.names:
+                (v, offset) = self.dtype.fields[name]
+                if v.kind == "V" and v.base.kind == "S":
+                    fields.append((name, f"S{v.shape[0]}"))
+                else:
+                    fields.append((name, v.base))
+            dtype_view = np.dtype(fields, align=True)
+        return dtype_view
+
+    @property
+    def dtype(self):
+        dtype = super().dtype
+        print("ORIGINAL dtype:", dtype)
+
+        fields = []
+        moffset = 0
+        if dtype.names is not None:
+            for name in dtype.names:
+                (v, offset) = dtype.fields[name]
+                moffset = max(moffset, offset)
+                moffset += v.itemsize
+                fields.append((name, v))
+            aligned = False
+            if moffset == dtype.itemsize:
+                aligned = True
+        if fields:
+            return np.dtype(fields, align=aligned)
+        else:
+            return dtype
 
 
 class BaseVariable(BaseObject):
@@ -500,6 +531,15 @@ class BaseVariable(BaseObject):
             if string_info and string_info.length is None:
                 return self._h5ds.asstr()[key]
 
+        view = False
+        if (
+            isinstance(self.datatype, CompoundType)
+            and not np.dtype(self.dtype).kind == "c"
+        ):
+            print("ÜÜÜ", self)
+            view = True
+            dtype = self.datatype.dtype_view
+
         # get padding
         padding = self._get_padding(key)
         # apply padding with fillvalue (both api)
@@ -510,14 +550,17 @@ class BaseVariable(BaseObject):
                 pad_width=padding,
                 mode="constant",
                 constant_values=fv,
-            )[key]
+            )[
+                key
+            ]  # .view(dtype)
 
-        return self._h5ds[key]
+        if view:
+            return self._h5ds[key].view(dtype)
+        else:
+            return self._h5ds[key]
 
     def __setitem__(self, key, value):
         from .legacyapi import Dataset
-
-        print("key, value", key, value)
 
         # check if provided values match enumtype values
         if enum_dict := self._root._h5py.check_enum_dtype(self.dtype):
@@ -535,6 +578,10 @@ class BaseVariable(BaseObject):
             key = _transform_1d_boolean_indexers(key)
             # resize on write only for legacy API
             self._maybe_resize_dimensions(key, value)
+
+        if isinstance(self.datatype, CompoundType) and not np.iscomplexobj(self.dtype):
+            value = value.view(self.datatype.dtype)
+
         self._h5ds[key] = value
 
     @property
@@ -696,6 +743,7 @@ def _check_dtype(group, dtype):
                 f" would override it."
             )
             raise TypeError(msg)
+        # dtype = h5type
     elif np.dtype(dtype).kind == "c":
         itemsize = np.dtype(dtype).itemsize
         try:
@@ -710,7 +758,7 @@ def _check_dtype(group, dtype):
         # if dname is not available in current group-path
         # create and commit type in current group
         if dname not in group._all_cmptypes:
-            dtype = group.create_cmptype(dtype, dname).dtype
+            dtype = group.create_cmptype(dtype, dname)  # .dtype
 
     return dtype
 
@@ -998,7 +1046,9 @@ class Group(Mapping):
             dtype = data.dtype
 
         # check and handle dtypes
+        print("XXXA:", dtype)
         dtype = _check_dtype(self, dtype)
+        print("XXXB:", dtype)
 
         if "scaleoffset" in kwargs:
             _invalid_netcdf_feature(
@@ -1068,6 +1118,10 @@ class Group(Mapping):
 
         # fill value handling
         fillvalue, h5fillvalue = _check_fillvalue(self, fillvalue, dtype)
+
+        if self._root._h5py.__name__ == "h5pyd":
+            dtype = np.dtype(dtype)
+        print("XXXC:", dtype)
 
         # create hdf5 variable
         self._h5group.create_dataset(
@@ -1269,7 +1323,7 @@ class Group(Mapping):
             6: self._all_cmptypes,
             8: self._all_enumtypes,
             9: self._all_vltypes,
-        }[h5typeid]
+        }.get(h5typeid)
 
     @property
     def enumtypes(self):
@@ -1380,18 +1434,22 @@ class Group(Mapping):
             A Python string containing a description of the compound data type.
         """
         # wrap in numpy dtype first
-        datatype = np.dtype(datatype)
+
+        datatype = np.dtype(datatype, align=True)
 
         # iterate and make chararray from strings
         # see https://github.com/Unidata/netcdf4-python/issues/773
         fields = []
-        for name, (v, offset) in datatype.fields.items():
-            if v.kind == "S":
-                fields.append((name, ("S1", (v.itemsize,))))
-            else:
-                fields.append((name, v.base))
-        datatype = np.dtype(fields)
-        print(datatype)
+        if datatype.names is not None:
+            for name in datatype.names:
+                (v, offset) = datatype.fields[name]
+                if v.kind == "S":
+                    fields.append((name, ("S1", (v.itemsize,))))
+                else:
+                    fields.append((name, v.base))
+        if fields:
+            datatype = np.dtype(fields, align=True)
+        print("X-datatype-X:", datatype)
         self._h5group[datatype_name] = datatype
         # create compound class instance
         cmptype = self._cmptype_cls(self, datatype_name)
