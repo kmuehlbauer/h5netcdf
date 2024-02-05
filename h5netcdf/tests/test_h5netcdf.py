@@ -2669,11 +2669,14 @@ def test_nc_complex_compatibility(tmp_local_or_remote_netcdf, netcdf_write_modul
         ds.createDimension("x", size=len(complex_array))
         var = ds.createVariable("data", "c16", ("x",))
         var[:] = complex_array
+        print("data0:", var[:])
 
     with legacyapi.Dataset(tmp_local_or_remote_netcdf, "r") as ds:
         dtype = ds.cmptypes["_PFNC_DOUBLE_COMPLEX_TYPE"]
         assert isinstance(dtype, h5netcdf.legacyapi.CompoundType)
         assert dtype.name == "_PFNC_DOUBLE_COMPLEX_TYPE"
+        print("data:", ds["data"][:], ds["data"]._h5ds.dtype.kind)
+        print("carr:", complex_array)
         assert array_equal(ds["data"][:], complex_array)
 
     if not tmp_local_or_remote_netcdf.startswith(remote_h5):

@@ -759,6 +759,7 @@ def _check_dtype(group, dtype):
         # create and commit type in current group
         if dname not in group._all_cmptypes:
             dtype = group.create_cmptype(dtype, dname)  # .dtype
+        print("CDT:", dtype)
 
     return dtype
 
