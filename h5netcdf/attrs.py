@@ -17,6 +17,12 @@ _HIDDEN_ATTRS = frozenset(
     ]
 )
 
+_NETCDF4_ATTRS = frozenset(
+    [
+        "_Encoding",
+    ]
+)
+
 
 class Attributes(MutableMapping):
     def __init__(self, h5attrs, check_dtype, h5py_pckg, format="NETCDF4"):
@@ -87,7 +93,8 @@ class Attributes(MutableMapping):
 
         self._check_dtype(dtype)
 
-        if self._format == "NETCDF4_CLASSIC":
+        # always for CLASSIC mode or special NETCDF4 attributes
+        if self._format == "NETCDF4_CLASSIC" or key in _NETCDF4_ATTRS:
             if dtype.kind in ["S", "U"] and self._h5py.__name__ == "h5py":
                 write_classic_string_attr(self._h5attrs._id, key, value)
             else:

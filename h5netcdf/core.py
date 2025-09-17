@@ -376,10 +376,11 @@ class BaseVariable(BaseObject):
             Values to be written.
         """
         new_shape = ()
-        v = None
+        v = np.asarray(value)
         for i, dim in enumerate(self.dimensions):
             # is unlimited dimensions (check in all dimensions)
             if self._parent._all_dimensions[dim].isunlimited():
+                current_dim_size = len(self._parent._all_dimensions[dim])
                 if (
                     key[i].stop is None
                 ):  # TODO: Won't this fail if key[i] is an array of ints?
@@ -399,15 +400,16 @@ class BaseVariable(BaseObject):
                             new_max = 1
                     else:
                         raise IndexError("shape of data does not conform to slice")
+                # if slice stop is negative, we need to check the value size
+                elif key[i].stop < 0:
+                    new_max = v.shape[i] - key[i].stop
                 else:
                     new_max = max(key[i].stop, self._h5ds.shape[i])
                 # resize unlimited dimension if needed but no other variables
                 # this is in line with `netcdf4-python` which only resizes
                 # the dimension and this variable
-                if (
-                    self._parent._all_dimensions[dim].size < new_max
-                    and self._root._format == "NETCDF4"
-                ):
+                # todo: check above assumptions with latest netcdf4-python/netcdf-c
+                if current_dim_size < new_max and self.name == dim:
                     self._parent.resize_dimension(dim, new_max)
                 new_shape += (new_max,)
             else:
@@ -611,7 +613,12 @@ class BaseVariable(BaseObject):
         else:
             # write with low-level API for CLASSIC format
             if (
-                self._root._format == "NETCDF4_CLASSIC"
+                (
+                    # always for CLASSIC format
+                    self._root._format == "NETCDF4_CLASSIC"
+                    # and always if _Encoding == "ascii"
+                    or self.attrs.get("_Encoding", False) == "ascii"
+                )
                 and self.dtype.kind in ["S", "U"]
                 and self._root._h5py.__name__ == "h5py"
             ):
@@ -1210,7 +1217,9 @@ class Group(Mapping):
         # when a variable is first written to, after variable creation.
         # Here we just attach it to every variable on creation.
         # Todo: get this consistent with netcdf-c/netcdf4-python
-        variable._ensure_dim_id()
+        if variable.ndim > 1 and self._root._format == "NETCDF4_CLASSIC":
+            if variable.dtype.kind not in ["U", "S"]:
+                variable._ensure_dim_id()
 
         # add fillvalue attribute to variable
         if fillvalue is not None:
