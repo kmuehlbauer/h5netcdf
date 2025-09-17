@@ -2960,9 +2960,22 @@ def write_legacy_string_array(tmp_netcdf, write_module, format):
     for nrec in range(nrecs):
         datac = netCDF4.stringtochar(data, encoding="ascii")
         v[nrec] = datac[nrec]
+    print("XX-shape0:", v2.shape, v2[:-1].shape)
+    print("XX-shape1:", data[:-1].shape)
+    print("data:", data.shape, data[:-1].shape)
     v2[:-1] = data[:-1]
+    print("XX-shape:", v2.shape)
+    if write_module == legacyapi:
+        print("XX:", ds.dimensions["n1"]._h5ds.shape)
+        print("XX:", v2._h5ds.shape)
     v2[-1] = data[-1]
+    if write_module == legacyapi:
+        print("XX1:", ds.dimensions["n1"]._h5ds.shape)
+        print("XX1:", v2._h5ds.shape)
     v2[-1, -1] = data[-1, -1]  # write single element
+    if write_module == legacyapi:
+        print("XX2:", ds.dimensions["n1"]._h5ds.shape)
+        print("XX2:", v2._h5ds.shape)
     v2[-1, -1] = data[-1, -1].tobytes()  # write single python string
     # _Encoding should be ignored if an array of characters is specified
     v3[:] = netCDF4.stringtochar(data, encoding="ascii")

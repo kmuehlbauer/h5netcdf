@@ -350,10 +350,10 @@ class BaseVariable(BaseObject):
             "int32",
         )
         # add _Netcdf4Coordinates for multi-dimensional coordinate variables
-        # or for (one-dimensional) classic format dimension coordinates
-        if len(coord_ids) > 1 or (
-            len(coord_ids) == 1 and self._root._format == "NETCDF4_CLASSIC"
-        ):
+        # or for (one-dimensional) coordinates
+        if len(coord_ids) >= 1:  # or (
+            # len(coord_ids) == 1 and self._root._format == "NETCDF4_CLASSIC"
+            # ):
             self._h5ds.attrs["_Netcdf4Coordinates"] = coord_ids
 
     def _ensure_dim_id(self):
@@ -417,6 +417,7 @@ class BaseVariable(BaseObject):
 
         # increase variable size if shape is changing
         if self._h5ds.shape != new_shape:
+            print("new_shape:", new_shape)
             self._h5ds.resize(new_shape)
 
     def _add_fillvalue(self, fillvalue):
@@ -432,7 +433,9 @@ class BaseVariable(BaseObject):
         else:
             # todo: this always checks for dtype.metadata
             string_info = self._root._h5py.check_string_dtype(self.dtype)
+            print("SI:", string_info)
             enum_info = self._root._h5py.check_enum_dtype(self.dtype)
+            print("EI:", enum_info)
             if (
                 string_info
                 and string_info.length is not None
@@ -442,9 +445,22 @@ class BaseVariable(BaseObject):
             else:
                 value = self.dtype.type(fillvalue)
 
+        if hasattr(value, "dtype"):
+            dtype = value.dtype
+        else:
+            dtype = self.dtype
         if self._root._format == "NETCDF4_CLASSIC":
-            value = np.atleast_1d(value)
+            value = np.atleast_1d(np.array(value, dtype=dtype))
 
+        if self._root._format == "NETCDF4" and not isinstance(value, (str, bytes)):
+            print("QQQQ:", value, dtype)
+            value = np.atleast_1d(value)
+        # if self._root._format == "NETCDF4":
+        #    if np.isscalar(value):
+        #        value = [value]
+        #    value = np.array(value, dtype=dtype)
+
+        print("add_fillvalue", fillvalue, value, self.dtype)
         self.attrs["_FillValue"] = value
 
     @property
@@ -1205,10 +1221,11 @@ class Group(Mapping):
             if refs is not None:
                 self._all_dimensions[name]._attach_scale(refs)
             # re-attach coords, needed for NETCDF4_CLASSIC
-            if self._root._format == "NETCDF4_CLASSIC":
-                variable._attach_coords()
+            # if self._root._format == "NETCDF4_CLASSIC":
+            variable._attach_coords()
 
         # In case of data variables attach dim_scales and coords.
+        print(name, h5name, list(self.variables.keys()), list(self._dimensions.keys()))
         if name in self.variables and h5name not in self._dimensions:
             variable._attach_dim_scales()
             variable._attach_coords()
@@ -1217,12 +1234,17 @@ class Group(Mapping):
         # when a variable is first written to, after variable creation.
         # Here we just attach it to every variable on creation.
         # Todo: get this consistent with netcdf-c/netcdf4-python
-        if variable.ndim > 1 and self._root._format == "NETCDF4_CLASSIC":
-            if variable.dtype.kind not in ["U", "S"]:
-                variable._ensure_dim_id()
+        # it seems, we need to add for every non string variable
+        if np.dtype(dtype).kind not in ["U", "S"]:
+            variable._ensure_dim_id()
 
         # add fillvalue attribute to variable
         if fillvalue is not None:
+            print("FV:", fillvalue, type(fillvalue), h5fillvalue)
+            if hasattr(fillvalue, "dtype"):
+                if hasattr(fillvalue.dtype, "metadata"):
+                    print(h5fillvalue.dtype.metadata)
+                    print(fillvalue.dtype.metadata)
             variable._add_fillvalue(fillvalue)
 
         return variable
