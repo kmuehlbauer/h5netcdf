@@ -269,23 +269,48 @@ _h5type_mapping = {
 
 def _get_h5usertype_identifier(h5type):
     """Return H5 Type Identifier from given H5 Datatype."""
-    try:
+    module = h5type.__module__
+    if module.startswith("h5py."):
         # h5py/pyfive first
         h5typeid = h5type.id.get_class()
-    except AttributeError:
+    elif module.startswith("h5pyd."):
         # h5pyd second
         h5typeid = _h5type_mapping[h5type.id.type_json["class"]]
+    elif module.startswith("pyfive."):
+        if h5type.id.__class__.__name__ == "TypeEnumID":
+            h5typeid = 8
+        elif h5type.id.__class__.__name__ == "TypeCompoundID":
+            h5typeid = 6
+        else:
+            h5typeid = 9
     return h5typeid
 
 
 def _get_h5dstype_identifier(h5type):
     """Return H5 Type Identifier from given H5 Dataset."""
-    try:
-        # h5py first
+    module = h5type.__module__
+    if module.startswith("h5py."):
         h5typeid = h5type.id.get_type().get_class()
-    except AttributeError:
-        # h5pyd second
+    elif module.startswith("h5pyd."):
         h5typeid = _h5type_mapping[h5type.id.type_json["class"]]
+    elif module.startswith("pyfive."):
+        dtype = h5type.id._meta.datatype
+        if isinstance(dtype, tuple):
+            if dtype[0] == "COMPOUND":
+                h5typeid = 6
+            elif dtype[0] == "ENUMERATION":
+                h5typeid = 8
+            elif "VLEN" in dtype[0]:
+                h5typeid = 9
+        else:
+            dtype = np.dtype(dtype)
+            if dtype.kind == "f":
+                h5typeid = 1
+            elif h5type.dtype.kind in ("i", "u"):
+                h5typeid = 0
+            elif h5type.dtype.kind in ("S", "U"):
+                h5typeid = 3
+
     return h5typeid
 
 
@@ -623,7 +648,7 @@ class BaseVariable(BaseObject):
         """
         # this is really painful as we have to iterate over all types
         # and check equality
-        if self._backend not in (None, "pyfive"):
+        if self._backend is not None:
             usertype = self._parent._get_usertype_dict(self._h5type_identifier)
             if usertype is not None:
                 for tid in usertype.values():
@@ -1094,6 +1119,8 @@ class Group(Mapping):
                         continue
             else:
                 v = self._h5group[k]
+
+            print("group loading:", k, v)
             if isinstance(v, self._root._h5py.Group):
                 # add to the groups collection if this is a h5py(d) Group
                 # instance
@@ -1534,13 +1561,7 @@ class Group(Mapping):
         The type is added by name to the dict attached to current group.
         """
         name = h5type.name.split("/")[-1]
-        if self._root._h5py.__name__ == "pyfive":
-            if isinstance(h5type.id, self._root._h5py.h5t.TypeEnumID):
-                h5typeid = 8
-            elif isinstance(h5type.id, self._root._h5py.h5t.TypeCompoundID):
-                h5typeid = 6
-        else:
-            h5typeid = _get_h5usertype_identifier(h5type)
+        h5typeid = _get_h5usertype_identifier(h5type)
         # add usertype to corresponding dict
         self._get_usertype_dict(h5typeid).maps[0].add(name)
 

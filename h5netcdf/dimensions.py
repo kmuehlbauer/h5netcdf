@@ -121,16 +121,21 @@ class Dimension:
     def size(self):
         """Return dimension size."""
         size = len(self)
+        print("size0:", size)
         if self.isunlimited():
+            print("isunlimited")
             # return actual dimensions sizes, this is in line with netcdf4-python
             # get sizes from all connected variables and calculate max
             # because netcdf unlimited dimensions can be any length
             # but connected variables dimensions can have a certain larger length.
+            print("attrs:", self._h5ds.attrs)
             reflist = self._h5ds.attrs.get("REFERENCE_LIST", None)
+            print("reflist:", reflist)
             if reflist is not None:
                 for ref, axis in reflist:
                     var = self._parent._h5group["/"][ref]
                     size = max(var.shape[axis], size)
+            print("size1:", size)
         return size
 
     def group(self):
