@@ -43,3 +43,12 @@ has_netCDF4_ge_1_7_0, requires_netCDF4_ge_1_7_0 = _importorskip(
     "netCDF4", minversion="1.7.0"
 )
 has_pyfive, requires_pyfive = _importorskip("pyfive")
+
+requires_write_backend = pytest.mark.skipif(
+    not (has_h5py or has_h5pyd or has_netCDF4),
+    reason=("requires an netCDF4 write backend " "(h5py, h5pyd, or netCDF4)"),
+)
+
+requires_h5py_h5pyd = pytest.mark.skipif(
+    not (has_h5py or has_h5pyd), reason=("requires h5py or h5pyd")
+)

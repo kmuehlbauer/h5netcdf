@@ -10,6 +10,9 @@ from shutil import rmtree
 
 import pytest
 
+from h5netcdf.tests import (
+    has_h5py,
+)
 from h5netcdf.utils import h5dump as _h5dump
 
 remote_h5 = ("http:", "hdf5:")
@@ -112,6 +115,8 @@ def tmp_local_or_remote_netcdf(request, tmpdir):
         rnd = "".join(random.choices(string.ascii_uppercase, k=5))
         return f"hdf5://home/{env['HS_USERNAME']}/testfile{rnd}.nc"
     else:
+        if not has_h5py:
+            pytest.skip("h5py not available")
         return str(tmpdir.join(param))
 
 
@@ -137,6 +142,8 @@ def decode_vlen_strings(request):
 @pytest.fixture(params=["netCDF4", "h5netcdf.legacyapi"])
 def netcdf_write_module(request):
     mod = request.param
+    if mod == "h5netcdf.legacyapi" and not has_h5py:
+        pytest.skip("No h5py")
     return pytest.importorskip(mod, reason=f"requires {mod}")
 
 
@@ -150,8 +157,15 @@ def backend(request, monkeypatch):
     return mod
 
 
-@pytest.fixture(params=["h5py", "pyfive"])
-def local_backend(request, monkeypatch):
+@pytest.fixture(params=["h5py"], ids=lambda p: f"w:{p}")
+def local_write_backend(request):
+    mod = request.param
+    _ = pytest.importorskip(mod, reason=f"requires {mod}")
+    return mod
+
+
+@pytest.fixture(params=["h5py", "pyfive"], ids=lambda p: f"r:{p}")
+def local_read_backend(request, monkeypatch):
     mod = request.param
     _ = pytest.importorskip(mod, reason=f"requires {mod}")
     if mod == "pyfive":
