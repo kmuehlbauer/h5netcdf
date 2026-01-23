@@ -4,6 +4,7 @@ import random
 import string
 import tempfile
 import time
+from collections import namedtuple
 from os import environ as env
 from pathlib import Path
 from shutil import rmtree
@@ -16,6 +17,7 @@ from h5netcdf.tests import (
 from h5netcdf.utils import h5dump as _h5dump
 
 remote_h5 = ("http:", "hdf5:")
+Backend = namedtuple("Backend", ["name", "mod"])
 
 
 @pytest.fixture(scope="session")
@@ -100,24 +102,138 @@ def setup_h5pyd_config(hsds_up):
     env["HS_USE_HTTPS"] = "False"
 
 
-@pytest.fixture(params=["testfile.nc", "hdf5://testfile"])
-def tmp_local_or_remote_netcdf(request, tmpdir):
-    param = request.param
-    if param.startswith(remote_h5):
+# All possible backend combinations
+ALL_COMBINATIONS = [
+    ("local", "h5py", "h5py"),
+    ("local", "h5py", "pyfive"),
+    ("remote", "h5pyd", "h5pyd"),
+]
+
+
+def filtered_combinations(node):
+    """Return all combinations, filtered according to @pytest.mark.local/remote."""
+    marker_local = node.get_closest_marker("local")
+    marker_remote = node.get_closest_marker("remote")
+
+    filtered = []
+    for mode, w, r in ALL_COMBINATIONS:
+        # skip if marker exists and mode doesn't match
+        if marker_local and not marker_remote and mode != "local":
+            continue
+        if marker_remote and not marker_local and mode != "remote":
+            continue
+        filtered.append((mode, w, r))
+
+    if not filtered:
+        pytest.skip("No valid backend+mode combination for this test")
+    return filtered
+
+
+# Fixture providing one combination per test
+@pytest.fixture(
+    params=ALL_COMBINATIONS,
+    ids=lambda p: f"{p[0]}_w:{p[1]}-r:{p[2]}",
+)
+def file_and_backend(request, tmpdir, env=os.environ):
+    mode, wname, rname = request.param  # supplied via params list
+
+    # Skip if mode doesn't match markers
+    marker_local = request.node.get_closest_marker("local")
+    marker_remote = request.node.get_closest_marker("remote")
+    if marker_local and not marker_remote and mode != "local":
+        pytest.skip("Filtered out by local marker")
+    if marker_remote and not marker_local and mode != "remote":
+        pytest.skip("Filtered out by remote marker")
+
+    # tmp_file
+    if mode == "remote":
         try:
             hsds_up = request.getfixturevalue("hsds_up")
         except pytest.skip.Exception:
             pytest.skip("HSDS not available")
 
         if not hsds_up:
-            pytest.skip("HSDS fixture returned False (not running)")
-
-        rnd = "".join(random.choices(string.ascii_uppercase, k=5))
-        return f"hdf5://home/{env['HS_USERNAME']}/testfile{rnd}.nc"
+            pytest.skip("HSDS not available — skipping remote test")
+        rnd = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5))
+        username = env.get("HS_USERNAME", "user")
+        tmp_file = f"hdf5://home/{username}/testfile{rnd}.nc"
     else:
-        if not has_h5py:
-            pytest.skip("h5py not available")
-        return str(tmpdir.join(param))
+        tmp_file = str(tmpdir.join("testfile.nc"))
+
+    # backends
+    wmod = pytest.importorskip(wname)
+    rmod = pytest.importorskip(rname)
+    write_backend = Backend(wname, wmod)
+    read_backend = Backend(rname, rmod)
+
+    return tmp_file, write_backend, read_backend
+
+
+@pytest.fixture
+def file_and_backend2(request, tmpdir, env=os.environ):
+    """
+    Returns one combination: (tmp_file, write_backend, read_backend)
+    Handles HSDS for remote only.
+    """
+    mode, wname, rname = request.param  # provided via indirect parametrize
+
+    # tmp_file
+    if mode == "remote":
+        try:
+            hsds_up = request.getfixturevalue("hsds_up")
+        except pytest.skip.Exception:
+            pytest.skip("HSDS not available")
+
+        if not hsds_up:
+            pytest.skip("HSDS not available — skipping remote test")
+        rnd = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5))
+        username = env.get("HS_USERNAME", "user")
+        tmp_file = f"hdf5://home/{username}/testfile{rnd}.nc"
+    else:
+        tmp_file = str(tmpdir.join("testfile.nc"))
+
+    # backends
+    wmod = pytest.importorskip(wname)
+    rmod = pytest.importorskip(rname)
+    write_backend = Backend(wname, wmod)
+    read_backend = Backend(rname, rmod)
+
+    return tmp_file, write_backend, read_backend
+
+
+@pytest.fixture
+def tmp_netcdf(file_and_backend):
+    return file_and_backend[0]
+
+
+@pytest.fixture
+def write_backend(file_and_backend):
+    return file_and_backend[1]
+
+
+@pytest.fixture
+def read_backend(file_and_backend):
+    return file_and_backend[2]
+
+
+# @pytest.fixture(params=["testfile.nc", "hdf5://testfile"])
+# def tmp_local_or_remote_netcdf(request, tmpdir):
+#     param = request.param
+#     if param.startswith(remote_h5):
+#         try:
+#             hsds_up = request.getfixturevalue("hsds_up")
+#         except pytest.skip.Exception:
+#             pytest.skip("HSDS not available")
+#
+#         if not hsds_up:
+#             pytest.skip("HSDS fixture returned False (not running)")
+#
+#         rnd = "".join(random.choices(string.ascii_uppercase, k=5))
+#         return f"hdf5://home/{env['HS_USERNAME']}/testfile{rnd}.nc"
+#     else:
+#         if not has_h5py:
+#             pytest.skip("h5py not available")
+#         return str(tmpdir.join(param))
 
 
 @pytest.fixture()
@@ -159,18 +275,18 @@ def backend(request, monkeypatch):
 
 @pytest.fixture(params=["h5py"], ids=lambda p: f"w:{p}")
 def local_write_backend(request):
-    mod = request.param
-    _ = pytest.importorskip(mod, reason=f"requires {mod}")
-    return mod
+    name = request.param
+    mod = pytest.importorskip(name, reason=f"requires {name}")
+    return Backend(name, mod)
 
 
 @pytest.fixture(params=["h5py", "pyfive"], ids=lambda p: f"r:{p}")
 def local_read_backend(request, monkeypatch):
-    mod = request.param
-    _ = pytest.importorskip(mod, reason=f"requires {mod}")
-    if mod == "pyfive":
+    name = request.param
+    mod = pytest.importorskip(name, reason=f"requires {name}")
+    if name == "pyfive":
         monkeypatch.setenv("PYFIVE_UNSUPPORTED_FEATURE", "warn")
-    return mod
+    return Backend(name, mod)
 
 
 def valid_backend_pairs():
@@ -182,41 +298,41 @@ def valid_backend_pairs():
 def backend_pair(request):
     """Valid (write_backend, read_backend) pairs."""
     wback, rback = request.param
-    _ = pytest.importorskip(wback, reason=f"requires {wback}")
-    _ = pytest.importorskip(rback, reason=f"requires {rback}")
-    return wback, rback
+    wmod = pytest.importorskip(wback, reason=f"requires {wback}")
+    rmod = pytest.importorskip(rback, reason=f"requires {rback}")
+    return Backend(wback, wmod), Backend(rback, rmod)
 
 
-@pytest.fixture
-def write_backend(backend_pair):
-    """Write backend from a valid pair."""
-    return backend_pair[0]
-
-
-@pytest.fixture
-def read_backend(backend_pair, monkeypatch):
-    """Read backend from a valid pair."""
-    if backend_pair[1] == "pyfive":
-        monkeypatch.setenv("PYFIVE_UNSUPPORTED_FEATURE", "warn")
-    return backend_pair[1]
-
-
-@pytest.fixture()
-def tmp_backend_netcdf(tmpdir, write_backend, request):
-    """Return test file path for the given write_backend."""
-    if write_backend == "h5pyd":
-        try:
-            hsds_up = request.getfixturevalue("hsds_up")
-        except pytest.skip.Exception:
-            pytest.skip("HSDS not available")
-
-        if not hsds_up:
-            pytest.skip("HSDS fixture returned False (not running)")
-
-        rnd = "".join(random.choices(string.ascii_uppercase, k=5))
-        return f"hdf5://home/{os.environ['HS_USERNAME']}/testfile{rnd}.nc"
-
-    return str(tmpdir.join("testfile.nc"))
+# # @pytest.fixture
+# # def write_backend(backend_pair):
+# #     """Write backend from a valid pair."""
+# #     return backend_pair[0]
+# #
+# #
+# # @pytest.fixture
+# # def read_backend(backend_pair, monkeypatch):
+# #     """Read backend from a valid pair."""
+# #     if backend_pair[1].name == "pyfive":
+# #         monkeypatch.setenv("PYFIVE_UNSUPPORTED_FEATURE", "warn")
+# #     return backend_pair[1]
+#
+#
+# @pytest.fixture()
+# def tmp_backend_netcdf(tmpdir, write_backend, request):
+#     """Return test file path for the given write_backend."""
+#     if write_backend.name == "h5pyd":
+#         try:
+#             hsds_up = request.getfixturevalue("hsds_up")
+#         except pytest.skip.Exception:
+#             pytest.skip("HSDS not available")
+#
+#         if not hsds_up:
+#             pytest.skip("HSDS fixture returned False (not running)")
+#
+#         rnd = "".join(random.choices(string.ascii_uppercase, k=5))
+#         return f"hdf5://home/{os.environ['HS_USERNAME']}/testfile{rnd}.nc"
+#
+#     return str(tmpdir.join("testfile.nc"))
 
 
 def pytest_generate_tests(metafunc):
