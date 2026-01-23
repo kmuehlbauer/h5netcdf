@@ -113,14 +113,17 @@ class Attributes(MutableMapping):
             # create with low level API to get fixed length strings
             # as netcdf4-python/netcdf-c does
             _create_string_attribute(self._h5attrs._id, key, value)
+            print("plain string:", key, value)
         # always for CLASSIC mode
         elif self._format == "NETCDF4_CLASSIC":
+            print("CLASSIC:", key, value)
             self._h5attrs[key] = np.atleast_1d(value)
         else:
             # netcdf4-python/netcdf-c writes non-string scalars as simple dataset
             # converting to 1D
             if np.isscalar(value) and dtype.kind not in {"S", "U"}:
                 value = np.atleast_1d(value)
+            print("normal:", key, value)
             self._h5attrs[key] = value
 
     def __delitem__(self, key):

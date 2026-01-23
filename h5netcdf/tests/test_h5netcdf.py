@@ -300,8 +300,8 @@ def read_legacy_netcdf(tmp_netcdf, read_module, write_module, backend="h5py"):
         assert v.dimensions == ("x", "y")
         assert v.ndim == 2
         assert v.ncattrs() == ["units"]
-        if write_module.__name__ != "netCDF4":
-            assert v.getncattr("units") == "meters"
+        # if write_module.__name__ != "netCDF4":
+        assert v.getncattr("units") == "meters"
         assert tuple(v.chunking()) == (4, 5)
 
         # check for dict items separately
@@ -583,6 +583,11 @@ def test_dump_netcdf4_vs_h5netcdf(
 
     write_legacy_netcdf(tmp_local_netcdf, netCDF4, **data_model)
     expected = h5dump(tmp_local_netcdf, dataset=dataset, strict=strict)
+
+    new_tmp_local_netcdf = tmp_local_netcdf[:-3] + "2.nc"
+    import shutil
+
+    shutil.copy(tmp_local_netcdf, new_tmp_local_netcdf)
 
     write_legacy_netcdf(tmp_local_netcdf, h5netcdf.legacyapi, **data_model)
     actual = h5dump(tmp_local_netcdf, dataset=dataset, strict=strict)
@@ -963,7 +968,7 @@ def test_Netcdf4Dimid(write_backend, read_backend, tmp_backend_netcdf):
 
 @requires_netCDF4
 def test_reading_str_array_from_netCDF4(
-    tmp_local_netcdf, local_backend, decode_vlen_strings
+    tmp_local_netcdf, local_read_backend, decode_vlen_strings
 ):
     # This tests reading string variables created by netCDF4
     import netCDF4
@@ -975,12 +980,12 @@ def test_reading_str_array_from_netCDF4(
         ds.variables["bar"][:] = _string_array
 
     ds = h5netcdf.File(
-        tmp_local_netcdf, "r", backend=local_backend, **decode_vlen_strings
+        tmp_local_netcdf, "r", backend=local_read_backend, **decode_vlen_strings
     )
 
     v = ds.variables["bar"]
     # pyfive always encodes strings
-    if local_backend == "pyfive" or getattr(ds, "decode_vlen_strings", True):
+    if local_read_backend == "pyfive" or getattr(ds, "decode_vlen_strings", True):
         assert array_equal(v, _string_array)
     else:
         assert array_equal(v, np.char.encode(_string_array))
@@ -996,13 +1001,13 @@ def test_nc_properties_new(write_backend, read_backend, tmp_backend_netcdf):
         assert b"h5netcdf" in f.attrs["_NCProperties"]
 
 
-def test_failed_read_open_and_clean_delete(tmpdir, local_backend):
+def test_failed_read_open_and_clean_delete(tmpdir, local_read_backend):
     # A file that does not exist but is opened for
     # reading should only raise an IOError and
     # no AttributeError at garbage collection.
     path = str(tmpdir.join("this_file_does_not_exist.nc"))
     try:
-        with h5netcdf.File(path, "r", backend=local_backend) as ds:
+        with h5netcdf.File(path, "r", backend=local_read_backend) as ds:
             assert ds
     except OSError:
         pass
@@ -1106,10 +1111,10 @@ def test_invalid_netcdf_okay(write_backend, read_backend, tmp_backend_netcdf):
 
 
 @requires_netCDF4
-def test_invalid_netcdf_overwrite_valid(tmp_local_netcdf, local_backend):
+def test_invalid_netcdf_overwrite_valid(tmp_local_netcdf, local_read_backend):
     import netCDF4
 
-    if local_backend == "pyfive":
+    if local_read_backend == "pyfive":
         # we need to skip this test, I've traced that down to using
         # Layout: Compound Properties Description for Datatype Version 3
         # meaning OPAQUE types, currently pyfive only extracts Version 1
@@ -1132,14 +1137,16 @@ def test_invalid_netcdf_overwrite_valid(tmp_local_netcdf, local_backend):
             f.create_variable("scaleoffset", data=[1], dimensions=("x",), scaleoffset=0)
 
     kwargs = {}
-    if local_backend == "pyfive":
+    if local_read_backend == "pyfive":
         kwargs["unsupported_hdf5_features"] = "warn"
 
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend, **kwargs) as f:
+    with h5netcdf.File(
+        tmp_local_netcdf, "r", backend=local_read_backend, **kwargs
+    ) as f:
         np.testing.assert_equal(f["lzf_compressed"][:], [1])
         assert f["complex"][...] == 1j
         assert f.attrs["complex_attr"] == 1j
-        if local_backend == "pyfive":
+        if local_read_backend == "pyfive":
             expected_errors = pytest.raises(
                 NotImplementedError, match="Filter with id: 6 import supported"
             )
@@ -1147,7 +1154,7 @@ def test_invalid_netcdf_overwrite_valid(tmp_local_netcdf, local_backend):
             expected_errors = memoryview(b"")
         with expected_errors:
             np.testing.assert_equal(f["scaleoffset"][:], [1])
-    h5 = get_backend_module(local_backend)
+    h5 = get_backend_module(local_read_backend)
     with h5.File(tmp_local_netcdf, "r") as f:
         assert "_NCProperties" not in f.attrs
 
@@ -1366,7 +1373,7 @@ def test_c_api_can_read_unlimited_dimensions(tmp_local_netcdf):
 @requires_h5py
 @requires_netCDF4
 def test_reading_unlimited_dimensions_created_with_c_api(
-    tmp_local_netcdf, local_backend
+    tmp_local_netcdf, local_read_backend
 ):
     import netCDF4
 
@@ -1387,7 +1394,7 @@ def test_reading_unlimited_dimensions_created_with_c_api(
         # Create another variable with same dimensions
         f.createVariable("dummy5", float, ("x", "y"))
 
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as f:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as f:
         print(list(f._root.dims))
         assert f.dimensions["x"].isunlimited()
         assert f.dimensions["y"].size == 3
@@ -1429,7 +1436,9 @@ def test_reading_unused_unlimited_dimension(tmp_local_or_remote_netcdf):
 
 @requires_h5py
 @requires_netCDF4
-def test_reading_special_datatype_created_with_c_api(tmp_local_netcdf, local_backend):
+def test_reading_special_datatype_created_with_c_api(
+    tmp_local_netcdf, local_read_backend
+):
     """Test reading a file with unsupported Datatype"""
     import netCDF4
 
@@ -1437,10 +1446,12 @@ def test_reading_special_datatype_created_with_c_api(tmp_local_netcdf, local_bac
         complex128 = np.dtype([("real", np.float64), ("imag", np.float64)])
         f.createCompoundType(complex128, "complex128")
     kwargs = {}
-    if local_backend == "pyfive":
+    if local_read_backend == "pyfive":
         kwargs["unsupported_hdf5_features"] = "warn"
 
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend, **kwargs) as f:
+    with h5netcdf.File(
+        tmp_local_netcdf, "r", backend=local_read_backend, **kwargs
+    ) as f:
         pass
 
 
@@ -1481,7 +1492,7 @@ def test_nc4_non_coord(tmp_local_or_remote_netcdf):
 
 @requires_netCDF4
 @requires_h5py
-def test_overwrite_existing_file(tmp_local_netcdf, local_backend):
+def test_overwrite_existing_file(tmp_local_netcdf, local_read_backend):
     import netCDF4
 
     # create file with _NCProperties attribute
@@ -1489,7 +1500,7 @@ def test_overwrite_existing_file(tmp_local_netcdf, local_backend):
         ds.createDimension("x", 10)
 
     # check attribute
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds.attrs._h5attrs.get("_NCProperties", False)
 
     # overwrite file with legacyapi
@@ -1497,7 +1508,7 @@ def test_overwrite_existing_file(tmp_local_netcdf, local_backend):
         ds.createDimension("x", 10)
 
     # check attribute
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds.attrs._h5attrs.get("_NCProperties", False)
 
     # overwrite file with new api
@@ -1505,7 +1516,7 @@ def test_overwrite_existing_file(tmp_local_netcdf, local_backend):
         ds.dimensions["x"] = 10
 
     # check attribute
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds.attrs._h5attrs.get("_NCProperties", False)
 
 
@@ -1991,7 +2002,7 @@ def test_more_than_7_attr_creation_track_order(tmp_local_or_remote_netcdf, track
 
 
 @requires_netCDF4
-def test_group_names(tmp_local_netcdf, local_backend):
+def test_group_names(tmp_local_netcdf, local_read_backend):
     import netCDF4
 
     # https://github.com/h5netcdf/h5netcdf/issues/68
@@ -2006,14 +2017,14 @@ def test_group_names(tmp_local_netcdf, local_backend):
             name = "/".join([name, f"group{i:02d}"])
             assert ds[name].name == name.split("/")[-1]
 
-    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds.name == "/"
         name = ""
         for i in range(10):
             name = "/".join([name, f"group{i:02d}"])
             assert ds[name].name == name.split("/")[-1]
 
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds.name == "/"
         name = ""
         for i in range(10):
@@ -2063,7 +2074,7 @@ def test_legacyapi_endianess(write_backend, read_backend, tmp_backend_netcdf):
 
 
 @requires_h5py
-def test_bool_slicing_length_one_dim(tmp_local_netcdf, local_backend):
+def test_bool_slicing_length_one_dim(tmp_local_netcdf, local_read_backend):
     # see https://github.com/h5netcdf/h5netcdf/issues/23
     with h5netcdf.File(tmp_local_netcdf, "w") as ds:
         ds.dimensions = {"x": 1, "y": 2}
@@ -2083,8 +2094,9 @@ def test_bool_slicing_length_one_dim(tmp_local_netcdf, local_backend):
     # regression test
     # https://github.com/h5py/h5py/pull/2079
     # https://github.com/h5netcdf/h5netcdf/pull/125/
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
-        ds["hello"][bool_slice, :]
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
+        data = ds["hello"][bool_slice, :]
+        np.testing.assert_equal(data, np.zeros((1, 2)))
 
 
 @requires_h5py_h5pyd
@@ -2193,10 +2205,10 @@ def test_h5netcdf_chunking(tmp_local_netcdf):
     assert chunks_h5netcdf == (5, 5, 5, 10)
 
 
-@requires_h5py_h5pyd
-def test_create_invalid_netcdf_catch_error(tmp_local_or_remote_netcdf):
+@pytest.mark.parametrize("write_backend", ["h5py", "h5pyd"])
+def test_create_invalid_netcdf_catch_error(tmp_backend_netcdf, write_backend):
     # see https://github.com/h5netcdf/h5netcdf/issues/138
-    with h5netcdf.File(tmp_local_or_remote_netcdf, "w") as f:
+    with h5netcdf.File(tmp_backend_netcdf, "w", backend=write_backend) as f:
         try:
             f.create_variable("test", ("x", "y"), data=np.ones((10, 10), dtype="bool"))
         except CompatibilityError:
@@ -2206,7 +2218,7 @@ def test_create_invalid_netcdf_catch_error(tmp_local_or_remote_netcdf):
 
 @requires_netCDF4
 @requires_h5py
-def test_dimensions_in_parent_groups(tmpdir, local_backend):
+def test_dimensions_in_parent_groups(tmpdir, local_read_backend):
     import netCDF4
 
     nc4_file = str(tmpdir.join("test_netcdf.nc"))
@@ -2231,8 +2243,8 @@ def test_dimensions_in_parent_groups(tmpdir, local_backend):
         var = ds0["group00"].createVariable("x", float, ("x", "y"))
         var[:] = np.ones((10, 20))
 
-    with h5netcdf.File(nc4_file, mode="r", backend=local_backend) as ds0:
-        with h5netcdf.File(leg_file, mode="r", backend=local_backend) as ds1:
+    with h5netcdf.File(nc4_file, mode="r", backend=local_read_backend) as ds0:
+        with h5netcdf.File(leg_file, mode="r", backend=local_read_backend) as ds1:
             assert repr(ds0.dimensions["x"]) == repr(ds1.dimensions["x"])
             assert repr(ds0.dimensions["y"]) == repr(ds1.dimensions["y"])
             assert repr(ds0["group00"]) == repr(ds1["group00"])
@@ -2241,18 +2253,17 @@ def test_dimensions_in_parent_groups(tmpdir, local_backend):
 
 
 def test_array_attributes(write_backend, read_backend, tmp_backend_netcdf):
-    import h5py
 
     with h5netcdf.File(tmp_backend_netcdf, "w", backend=write_backend) as ds:
-        dt = h5py.string_dtype("utf-8")
+        dt = ds._h5py.string_dtype("utf-8")
         unicode = "unicodé"
         ds.attrs["unicode"] = unicode
         ds.attrs["unicode_0dim"] = np.array(unicode, dtype=dt)
         ds.attrs["unicode_1dim"] = np.array([unicode], dtype=dt)
-        ds.attrs["unicode_arrary"] = np.array([unicode, "foobár"], dtype=dt)
+        ds.attrs["unicode_array"] = np.array([unicode, "foobár"], dtype=dt)
         ds.attrs["unicode_list"] = [unicode]
 
-        dt = h5py.string_dtype("ascii")
+        dt = ds._h5py.string_dtype("ascii")
         # if dtype is ascii it's irrelevant if the data is provided as bytes or string
         ascii = "ascii"
         ds.attrs["ascii"] = ascii
@@ -2268,16 +2279,16 @@ def test_array_attributes(write_backend, read_backend, tmp_backend_netcdf):
         ds.attrs["bytes_array"] = np.array([ascii, b"foobar"], dtype=dt)
         ds.attrs["bytes_list"] = [ascii]
 
-        dt = h5py.string_dtype("utf-8", 10)
+        dt = ds._h5py.string_dtype("utf-8", 10)
         # unicode needs to be encoded properly for fixed size string type
         ds.attrs["unicode_fixed"] = np.array(unicode.encode("utf-8"), dtype=dt)
         ds.attrs["unicode_fixed_0dim"] = np.array(unicode.encode("utf-8"), dtype=dt)
         ds.attrs["unicode_fixed_1dim"] = np.array([unicode.encode("utf-8")], dtype=dt)
-        ds.attrs["unicode_fixed_arrary"] = np.array(
+        ds.attrs["unicode_fixed_array"] = np.array(
             [unicode.encode("utf-8"), "foobár".encode()], dtype=dt
         )
 
-        dt = h5py.string_dtype("ascii", 10)
+        dt = ds._h5py.string_dtype("ascii", 10)
         ascii = "ascii"
         ds.attrs["ascii_fixed"] = np.array(ascii, dtype=dt)
         ds.attrs["ascii_fixed_0dim"] = np.array(ascii, dtype=dt)
@@ -2299,152 +2310,79 @@ def test_array_attributes(write_backend, read_backend, tmp_backend_netcdf):
         ds.flush()
         ds.close()
 
-    with h5netcdf.File(tmp_backend_netcdf, mode="r", backend=read_backend) as ds:
-        assert ds._h5py.__name__ == read_backend
-
-        assert ds.attrs["unicode"] == unicode
-        assert ds.attrs["unicode_0dim"] == unicode
-        assert ds.attrs["unicode_1dim"] == unicode
-        assert ds.attrs["unicode_arrary"] == [unicode, "foobár"]
-        assert ds.attrs["unicode_list"] == unicode
-
-        # bytes and strings are received as strings for h5py3
+    def check_all_attrs(ds, is_legacy=False, skip_unicode_fixed=False):
+        unicode = "unicodé"
         ascii = "ascii"
         foobar = "foobar"
-        assert ds.attrs["ascii"] == ascii
-        assert ds.attrs["ascii_0dim"] == ascii
-        assert ds.attrs["ascii_1dim"] == ascii
-        assert ds.attrs["ascii_array"] == [ascii, foobar]
-        assert ds.attrs["ascii_list"] == "ascii"
 
-        assert ds.attrs["bytes"] == ascii
-        assert ds.attrs["bytes_0dim"] == ascii
-        assert ds.attrs["bytes_1dim"] == ascii
-        assert ds.attrs["bytes_array"] == [ascii, foobar]
-        assert ds.attrs["bytes_list"] == "ascii"
+        # new or legacy api
+        get_attr = lambda name: getattr(ds, name) if is_legacy else ds.attrs[name]
 
-        if read_backend != "h5pyd":
-            # todo: this breaks for some reason with h5pyd
-            # it looks like this is already written as ascii
-            assert ds.attrs["unicode_fixed"] == unicode
-            assert ds.attrs["unicode_fixed_0dim"] == unicode
-            assert ds.attrs["unicode_fixed_1dim"] == unicode
-            assert ds.attrs["unicode_fixed_arrary"] == [unicode, "foobár"]
+        # --- unicode ---
+        assert get_attr("unicode") == unicode
+        assert get_attr("unicode_0dim") == unicode
+        assert get_attr("unicode_1dim") == unicode
+        assert get_attr("unicode_array") == [unicode, "foobár"]
+        assert get_attr("unicode_list") == unicode
 
-        ascii = "ascii"
-        assert ds.attrs["ascii_fixed"] == ascii
-        assert ds.attrs["ascii_fixed_0dim"] == ascii
-        assert ds.attrs["ascii_fixed_1dim"] == ascii
-        assert ds.attrs["ascii_fixed_array"] == [ascii, foobar]
+        # --- ascii ---
+        assert get_attr("ascii") == ascii
+        assert get_attr("ascii_0dim") == ascii
+        assert get_attr("ascii_1dim") == ascii
+        assert get_attr("ascii_array") == [ascii, foobar]
+        assert get_attr("ascii_list") == ascii
 
-        assert ds.attrs["bytes_fixed"] == ascii
-        assert ds.attrs["bytes_fixed_0dim"] == ascii
-        assert ds.attrs["bytes_fixed_1dim"] == ascii
-        assert ds.attrs["bytes_fixed_array"] == [ascii, foobar]
+        # --- bytes ---
+        assert get_attr("bytes") == ascii
+        assert get_attr("bytes_0dim") == ascii
+        assert get_attr("bytes_1dim") == ascii
+        assert get_attr("bytes_array") == [ascii, foobar]
+        assert get_attr("bytes_list") == ascii
 
-        assert ds.attrs["int"] == 1
-        assert ds.attrs["intlist"] == 1
-        np.testing.assert_equal(ds.attrs["int_array"], np.arange(10))
-        np.testing.assert_equal(ds.attrs["empty_list"], np.array([]))
-        np.testing.assert_equal(ds.attrs["empty_array"], np.array([]))
+        # --- fixed strings ---
+        if not skip_unicode_fixed:
+            assert get_attr("unicode_fixed") == unicode
+            assert get_attr("unicode_fixed_0dim") == unicode
+            assert get_attr("unicode_fixed_1dim") == unicode
+            assert get_attr("unicode_fixed_array") == [unicode, "foobár"]
+
+        assert get_attr("ascii_fixed") == ascii
+        assert get_attr("ascii_fixed_0dim") == ascii
+        assert get_attr("ascii_fixed_1dim") == ascii
+        assert get_attr("ascii_fixed_array") == [ascii, foobar]
+
+        assert get_attr("bytes_fixed") == ascii
+        assert get_attr("bytes_fixed_0dim") == ascii
+        assert get_attr("bytes_fixed_1dim") == ascii
+        assert get_attr("bytes_fixed_array") == [ascii, foobar]
+
+        # --- numbers & empty ---
+        assert get_attr("int") == 1
+        assert get_attr("intlist") == 1
+        np.testing.assert_equal(get_attr("int_array"), np.arange(10))
+        np.testing.assert_equal(get_attr("empty_list"), np.array([]))
+        np.testing.assert_equal(get_attr("empty_array"), np.array([]))
+
+    with h5netcdf.File(tmp_backend_netcdf, mode="r", backend=read_backend) as ds:
+        assert ds._h5py.__name__ == read_backend
+        check_all_attrs(ds, skip_unicode_fixed=(read_backend == "h5pyd"))
 
     with legacyapi.Dataset(tmp_backend_netcdf, mode="r", backend=read_backend) as ds:
         assert ds._h5py.__name__ == read_backend
-
-        assert ds.unicode == unicode
-        assert ds.unicode_0dim == unicode
-        assert ds.unicode_1dim == unicode
-        assert ds.unicode_arrary == [unicode, "foobár"]
-        assert ds.unicode_list == unicode
-
-        # bytes and strings are received as strings for h5py3
-        ascii = "ascii"
-        foobar = "foobar"
-        assert ds.ascii == ascii
-        assert ds.ascii_0dim == ascii
-        assert ds.ascii_1dim == ascii
-        assert ds.ascii_array == [ascii, foobar]
-        assert ds.ascii_list == ascii
-
-        assert ds.bytes == ascii
-        assert ds.bytes_0dim == ascii
-        assert ds.bytes_1dim == ascii
-        assert ds.bytes_array == [ascii, foobar]
-        assert ds.bytes_list == ascii
-
-        if read_backend != "h5pyd":
-            # todo: this breaks for some reason with h5pyd
-            # it looks like this is already written as ascii
-            assert ds.unicode_fixed == unicode
-            assert ds.unicode_fixed_0dim == unicode
-            assert ds.unicode_fixed_1dim == unicode
-            assert ds.unicode_fixed_arrary == [unicode, "foobár"]
-
-        ascii = "ascii"
-        assert ds.ascii_fixed == ascii
-        assert ds.ascii_fixed_0dim == ascii
-        assert ds.ascii_fixed_1dim == ascii
-        assert ds.ascii_fixed_array == [ascii, "foobar"]
-
-        assert ds.bytes_fixed == ascii
-        assert ds.bytes_fixed_0dim == ascii
-        assert ds.bytes_fixed_1dim == ascii
-        assert ds.bytes_fixed_array == [ascii, "foobar"]
-
-        assert ds.int == 1
-        assert ds.intlist == 1
-        np.testing.assert_equal(ds.int_array, np.arange(10))
-        np.testing.assert_equal(ds.attrs["empty_list"], np.array([]))
-        np.testing.assert_equal(ds.attrs["empty_array"], np.array([]))
+        check_all_attrs(
+            ds, is_legacy=True, skip_unicode_fixed=(read_backend == "h5pyd")
+        )
 
     if not tmp_backend_netcdf.startswith(remote_h5) and has_netCDF4:
         import netCDF4
 
         with netCDF4.Dataset(tmp_backend_netcdf, mode="r") as ds:
-            assert ds.unicode == unicode
-            assert ds.unicode_0dim == unicode
-            assert ds.unicode_1dim == unicode
-            assert ds.unicode_arrary == [unicode, "foobár"]
-            assert ds.unicode_list == unicode
-
-            ascii = "ascii"
-            assert ds.ascii == ascii
-            assert ds.ascii_0dim == ascii
-            assert ds.ascii_1dim == ascii
-            assert ds.ascii_array == [ascii, "foobar"]
-            assert ds.ascii_list == ascii
-
-            assert ds.bytes == ascii
-            assert ds.bytes_0dim == ascii
-            assert ds.bytes_1dim == ascii
-            assert ds.bytes_array == [ascii, "foobar"]
-            assert ds.bytes_list == ascii
-
-            assert ds.unicode_fixed == unicode
-            assert ds.unicode_fixed_0dim == unicode
-            assert ds.unicode_fixed_1dim == unicode
-            assert ds.unicode_fixed_arrary == [unicode, "foobár"]
-
-            assert ds.ascii_fixed == ascii
-            assert ds.ascii_fixed_0dim == ascii
-            assert ds.ascii_fixed_1dim == ascii
-            assert ds.ascii_fixed_array == [ascii, "foobar"]
-
-            assert ds.bytes_fixed == ascii
-            assert ds.bytes_fixed_0dim == ascii
-            assert ds.bytes_fixed_1dim == ascii
-            assert ds.bytes_fixed_array == [ascii, "foobar"]
-
-            assert ds.int == 1
-            assert ds.intlist == 1
-            np.testing.assert_equal(ds.int_array, np.arange(10))
-            np.testing.assert_equal(ds.empty_list, np.array([]))
-            np.testing.assert_equal(ds.empty_array, np.array([]))
+            check_all_attrs(ds, is_legacy=True)
 
 
 @requires_h5py_ge_3_7_0
 def test_vlen_string_dataset_fillvalue(
-    tmp_local_netcdf, decode_vlen_strings, local_backend
+    tmp_local_netcdf, decode_vlen_strings, local_read_backend
 ):
     # check _FillValue for VLEN string datasets
     import h5py
@@ -2461,11 +2399,11 @@ def test_vlen_string_dataset_fillvalue(
 
     # check, if new API can read them
     with h5netcdf.File(
-        tmp_local_netcdf, "r", **decode_vlen_strings, backend=local_backend
+        tmp_local_netcdf, "r", **decode_vlen_strings, backend=local_read_backend
     ) as ds:
-        assert ds._h5py.__name__ == local_backend
+        assert ds._h5py.__name__ == local_read_backend
         decode_vlen = (
-            decode_vlen_strings["decode_vlen_strings"] or local_backend == "pyfive"
+            decode_vlen_strings["decode_vlen_strings"] or local_read_backend == "pyfive"
         )
         fvalue0 = fill_value0 if decode_vlen else fill_value0.encode("utf-8")
         fvalue1 = fill_value1 if decode_vlen else fill_value1.encode("utf-8")
@@ -2475,8 +2413,8 @@ def test_vlen_string_dataset_fillvalue(
         assert ds["x1"].attrs["_FillValue"] == fill_value1
 
     # check if legacyapi can read them
-    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_backend) as ds:
-        assert ds._h5py.__name__ == local_backend
+    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
+        assert ds._h5py.__name__ == local_read_backend
         assert ds["x0"][0] == fill_value0
         assert ds["x0"]._FillValue == fill_value0
         assert ds["x1"][0] == fill_value1
@@ -2502,11 +2440,11 @@ def test_vlen_string_dataset_fillvalue(
 
     # check if new API can read them
     with h5netcdf.File(
-        tmp_local_netcdf, "r", **decode_vlen_strings, backend=local_backend
+        tmp_local_netcdf, "r", **decode_vlen_strings, backend=local_read_backend
     ) as ds:
-        assert ds._h5py.__name__ == local_backend
+        assert ds._h5py.__name__ == local_read_backend
         decode_vlen = (
-            decode_vlen_strings["decode_vlen_strings"] or local_backend == "pyfive"
+            decode_vlen_strings["decode_vlen_strings"] or local_read_backend == "pyfive"
         )
         fvalue0 = fill_value0 if decode_vlen else fill_value0.encode("utf-8")
         fvalue1 = fill_value1 if decode_vlen else fill_value1.encode("utf-8")
@@ -2516,8 +2454,8 @@ def test_vlen_string_dataset_fillvalue(
         assert ds["x1"].attrs["_FillValue"] == fill_value1
 
     # check if legacyapi can read them
-    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_backend) as ds:
-        assert ds._h5py.__name__ == local_backend
+    with legacyapi.Dataset(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
+        assert ds._h5py.__name__ == local_read_backend
         assert ds["x0"][0] == fill_value0
         assert ds["x0"]._FillValue == fill_value0
         assert ds["x1"][0] == fill_value1
@@ -3218,9 +3156,9 @@ def test_is_classic(tmp_local_netcdf):
 
 
 @requires_h5py
-def test_filters(tmp_local_netcdf, local_backend):
+def test_filters(tmp_local_netcdf, local_read_backend):
     write_h5netcdf(tmp_local_netcdf)
-    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_backend) as ds:
+    with h5netcdf.File(tmp_local_netcdf, "r", backend=local_read_backend) as ds:
         assert ds["foo"].compression == "gzip"
         assert ds["foo"].filters()["zlib"]
         # This variable is present in netcdf4 so we want to make sure it is also here
