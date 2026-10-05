@@ -3013,12 +3013,12 @@ def test_h5pyd_driver(hsds_up):
         pytest.skip("HSDS service not running")
     rnd = "".join(random.choice(string.ascii_uppercase) for _ in range(5))
     fname = f"hdf5://testfile{rnd}.nc"
-    with h5netcdf.File(fname, "w", driver="h5pyd") as ds:
+    with h5netcdf.File(fname, "w", backend="h5pyd") as ds:
         assert ds._h5py == h5pyd
         assert isinstance(ds._h5file, h5pyd.File)
 
     fname = f"/testfile{rnd}.nc"
-    with h5netcdf.File(fname, "w", driver="h5pyd") as ds:
+    with h5netcdf.File(fname, "w", backend="h5pyd") as ds:
         assert ds._h5py == h5pyd
         assert isinstance(ds._h5file, h5pyd.File)
 
@@ -3033,7 +3033,7 @@ def test_h5pyd_nonchunked_scalars(hsds_up):
     fname = f"hdf5://testfile{rnd}.nc"
     with h5pyd.File(fname, "w") as ds:
         ds.create_dataset("foo", data=b"1234")
-    with h5netcdf.File(fname, "r", driver="h5pyd") as ds:
+    with h5netcdf.File(fname, "r", backend="h5pyd") as ds:
         # h5pyd does not expose HSDS's internal chunking for scalar datasets
         assert ds["foo"]._h5ds.chunks is None
         assert ds["foo"].chunks is None
@@ -3041,10 +3041,10 @@ def test_h5pyd_nonchunked_scalars(hsds_up):
 
 @requires_h5pyd
 def test_h5pyd_append(tmp_remote_netcdf):
-    with h5netcdf.File(tmp_remote_netcdf, "a", driver="h5pyd") as ds:
+    with h5netcdf.File(tmp_remote_netcdf, "a", backend="h5pyd") as ds:
         assert ds._preexisting_file
 
-    with h5netcdf.File(tmp_remote_netcdf, "a", driver="h5pyd") as ds:
+    with h5netcdf.File(tmp_remote_netcdf, "a", backend="h5pyd") as ds:
         assert ds._preexisting_file
 
 

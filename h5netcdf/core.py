@@ -144,11 +144,6 @@ def _parse_backend(path, mode, backend, **kwargs):
             "'pyfive', 'h5py', 'h5pyd'"
         )
 
-    if driver == "h5pyd" and backend not in ["pyfive", "h5py"]:
-        msg = "Specifying driver='h5pyd' is deprecated, please use backend='h5pyd' instead."
-        warnings.warn(msg, DeprecationWarning)
-        backend, driver = "h5pyd", None
-
     if driver is not None:
         if backend not in [None, "h5py"]:
             msg = f"driver={driver!r} only works with 'h5py' backend, but given backend={backend}."
